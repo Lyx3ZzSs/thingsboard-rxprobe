@@ -1,0 +1,36 @@
+# Thingsboard RxProbe 配置文件
+
+server:
+  host: 0.0.0.0
+  port: 8088
+  mode: release  # debug/release
+
+database:
+  driver: sqlite   # postgres/sqlite
+  host: localhost
+  port: 5432
+  user: rxprobe
+  password: ""     # 可通过环境变量 DB_PASSWORD 覆盖
+  dbname: rxprobe.db  # SQLite 使用文件名，PostgreSQL 使用数据库名
+  max_open_conns: 20
+  max_idle_conns: 10
+
+jwt:
+  secret: rxprobe-secret-key-change-me  # 可通过环境变量 JWT_SECRET 覆盖
+  expire_hours: 24
+
+alerter:
+  wecom:
+    enabled: true
+    webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=d88b9ab7-9a4a-4ece-a796-890daf34cc27"  # 可通过环境变量 WECOM_WEBHOOK_URL 覆盖
+
+scheduler:
+  default_interval: 30        # 默认探测间隔（秒）
+  default_timeout: 5          # 默认超时时间（秒）
+  alert_threshold: 3          # 告警阈值（连续失败次数）
+  result_retention_days: 30   # 探测结果保留天数
+
+log:
+  level: info     # debug/info/warn/error
+  format: console # console/json
+
