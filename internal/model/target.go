@@ -6,6 +6,14 @@ import (
 	"gorm.io/datatypes"
 )
 
+// ProbeTarget 状态常量
+const (
+	TargetStatusHealthy   = "healthy"   // 健康
+	TargetStatusUnhealthy = "unhealthy" // 不健康
+	TargetStatusUnknown   = "unknown"   // 未知（未探测或等待首次探测）
+	TargetStatusDisabled  = "disabled"  // 已禁用
+)
+
 // ProbeTarget 探测目标
 type ProbeTarget struct {
 	ID              uint64         `json:"id" gorm:"primaryKey"`
@@ -15,11 +23,10 @@ type ProbeTarget struct {
 	TimeoutSeconds  int            `json:"timeout_seconds" gorm:"default:5"`
 	IntervalSeconds int            `json:"interval_seconds" gorm:"default:30"`
 	Enabled         bool           `json:"enabled" gorm:"default:true;index"`
-	Status          string         `json:"status" gorm:"size:16;default:'unknown'"` // healthy, unhealthy, unknown
+	Status          string         `json:"status" gorm:"size:16;default:'unknown'"` // healthy, unhealthy, unknown, disabled
 	LastCheckAt     *time.Time     `json:"last_check_at"`
 	LastLatencyMs   int64          `json:"last_latency_ms"`
 	LastMessage     string         `json:"last_message" gorm:"size:512"`
-	CreatedBy       uint64         `json:"created_by"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
 }

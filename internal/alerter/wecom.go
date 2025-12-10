@@ -19,13 +19,14 @@ type WeComAlerter struct {
 
 // WeComMessage 企业微信消息
 type WeComMessage struct {
-	MsgType  string   `json:"msgtype"`
-	Markdown Markdown `json:"markdown"`
+	MsgType string       `json:"msgtype"`
+	Text    *TextContent `json:"text,omitempty"`
 }
 
-// Markdown 消息内容
-type Markdown struct {
-	Content string `json:"content"`
+// TextContent 文本消息内容
+type TextContent struct {
+	Content       string   `json:"content"`
+	MentionedList []string `json:"mentioned_list,omitempty"`
 }
 
 // WeComResponse 企业微信响应
@@ -56,9 +57,10 @@ func (w *WeComAlerter) Send(ctx context.Context, alert *model.Alert) error {
 	content := w.formatAlert(alert)
 
 	msg := WeComMessage{
-		MsgType: "markdown",
-		Markdown: Markdown{
-			Content: content,
+		MsgType: "text",
+		Text: &TextContent{
+			Content:       content,
+			MentionedList: []string{"@all"},
 		},
 	}
 
@@ -99,46 +101,33 @@ func (w *WeComAlerter) Send(ctx context.Context, alert *model.Alert) error {
 func (w *WeComAlerter) formatAlert(alert *model.Alert) string {
 	if alert.Status == model.AlertStatusFiring {
 		// 告警触发
-		return fmt.Sprintf(`🚨 <font color="warning">**Thingsboard 探针告警**</font>
+		return fmt.Sprintf(`🚨 生产环境通用告警工具
 
-**目标**：%s
-
-**类型**：%s
-
-**原因**：%s
-
-**时间**：%s
-
-<@all>`,
+目标：%s
+原因：%s
+时间：%s`,
 			alert.TargetName,
-			getTypeLabel(alert.TargetType),
 			alert.Message,
 			alert.FiredAt.Format("2006-01-02 15:04:05"),
 		)
 	}
 
 	// 告警恢复
-	content := fmt.Sprintf(`✅ <font color="info">**Thingsboard 探针恢复**</font>
+	content := fmt.Sprintf(`✅ 生产环境通用告警工具
 
-**目标**：%s
-
-**类型**：%s
-
-**时间**：%s`,
+目标：%s
+时间：%s`,
 		alert.TargetName,
-		getTypeLabel(alert.TargetType),
+		//getTypeLabel(alert.TargetType),
 		alert.FiredAt.Format("2006-01-02 15:04:05"),
 	)
 
 	if alert.ResolvedAt != nil {
 		// 计算故障时长
 		duration := alert.ResolvedAt.Sub(alert.FiredAt)
-		content += fmt.Sprintf("\n\n**恢复时间**：%s", alert.ResolvedAt.Format("2006-01-02 15:04:05"))
-		content += fmt.Sprintf("\n\n**故障时长**：%s", formatDuration(duration))
+		content += fmt.Sprintf("\n恢复时间：%s", alert.ResolvedAt.Format("2006-01-02 15:04:05"))
+		content += fmt.Sprintf("\n故障时长：%s", formatDuration(duration))
 	}
-
-	// 恢复时也@所有人
-	content += "\n\n<@all>"
 
 	return content
 }
@@ -165,7 +154,7 @@ func formatDuration(d time.Duration) string {
 }
 
 // getTypeLabel 获取类型标签
-func getTypeLabel(probeType string) string {
+/*func getTypeLabel(probeType string) string {
 	labels := map[string]string{
 		"postgresql": "PostgreSQL",
 		"cassandra":  "Cassandra",
@@ -178,4 +167,4 @@ func getTypeLabel(probeType string) string {
 		return label
 	}
 	return probeType
-}
+}*/

@@ -14,16 +14,23 @@ import (
 	"go.uber.org/zap"
 )
 
+// AlertChecker 告警检查接口，用于检查目标是否有未恢复的告警
+type AlertChecker interface {
+	HasUnresolvedAlert(ctx context.Context, targetID uint64) bool
+}
+
 // Scheduler 调度器
 type Scheduler struct {
-	cron          *cron.Cron
-	tasks         sync.Map // map[uint64]*ProbeTask
-	proberFactory *prober.Factory
-	resultChan    chan *ProbeResultEvent
-	alertChan     chan *AlertEvent
-	stopChan      chan struct{}
-	mu            sync.RWMutex
-	running       bool
+	cron           *cron.Cron
+	tasks          sync.Map // map[uint64]*ProbeTask
+	proberFactory  *prober.Factory
+	alertChecker   AlertChecker
+	resultChan     chan *ProbeResultEvent
+	alertChan      chan *AlertEvent
+	stopChan       chan struct{}
+	mu             sync.RWMutex
+	running        bool
+	alertThreshold int // 告警阈值（连续失败次数）
 }
 
 // ProbeTask 探测任务
@@ -52,13 +59,18 @@ type AlertEvent struct {
 }
 
 // NewScheduler 创建调度器
-func NewScheduler(factory *prober.Factory) *Scheduler {
+func NewScheduler(factory *prober.Factory, alertThreshold int, alertChecker AlertChecker) *Scheduler {
+	if alertThreshold <= 0 {
+		alertThreshold = 3 // 默认值
+	}
 	return &Scheduler{
-		cron:          cron.New(cron.WithSeconds()),
-		proberFactory: factory,
-		resultChan:    make(chan *ProbeResultEvent, 1000),
-		alertChan:     make(chan *AlertEvent, 100),
-		stopChan:      make(chan struct{}),
+		cron:           cron.New(cron.WithSeconds()),
+		proberFactory:  factory,
+		alertChecker:   alertChecker,
+		resultChan:     make(chan *ProbeResultEvent, 1000),
+		alertChan:      make(chan *AlertEvent, 100),
+		stopChan:       make(chan struct{}),
+		alertThreshold: alertThreshold,
 	}
 }
 
@@ -73,7 +85,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 	s.mu.Unlock()
 
 	s.cron.Start()
-	go s.processResults(ctx)
+	// 注意：不再在这里调用 processResults
+	// 告警逻辑改为在 executeProbe 中同步处理
+	// resultChan 只由 alert_service 消费用于保存结果
 	logger.Info("调度器已启动")
 }
 
@@ -121,12 +135,18 @@ func (s *Scheduler) AddTask(target *model.ProbeTarget) error {
 
 	task := &ProbeTask{Target: target}
 
-	// 如果目标状态是 unhealthy，初始化 FailCount 为 3
-	// 这样当探测恢复正常时，能够正确触发恢复通知
-	if target.Status == "unhealthy" {
-		task.FailCount = 3
-		logger.Info("目标状态为异常，初始化失败计数",
+	// 检查是否需要初始化 FailCount（用于正确触发恢复通知）
+	// 条件：目标状态为 unhealthy，或者数据库中有未恢复的告警记录
+	shouldInitFailCount := target.Status == model.TargetStatusUnhealthy
+	if !shouldInitFailCount && s.alertChecker != nil {
+		shouldInitFailCount = s.alertChecker.HasUnresolvedAlert(context.Background(), target.ID)
+	}
+
+	if shouldInitFailCount {
+		task.FailCount = s.alertThreshold
+		logger.Info("初始化失败计数（存在未恢复告警或状态异常）",
 			zap.Uint64("target_id", target.ID),
+			zap.String("status", target.Status),
 			zap.Int("fail_count", task.FailCount),
 		)
 	}
@@ -203,33 +223,25 @@ func (s *Scheduler) executeProbe(task *ProbeTask, target prober.Target) {
 		}
 	}
 
-	select {
-	case s.resultChan <- &ProbeResultEvent{
+	event := &ProbeResultEvent{
 		TargetID:  task.Target.ID,
 		Target:    task.Target,
 		Result:    result,
 		Timestamp: time.Now(),
-	}:
+	}
+
+	// 先同步处理告警逻辑（更新失败计数、触发告警）
+	s.handleResult(event)
+
+	// 再发送到 resultChan 供 alert_service 保存结果
+	select {
+	case s.resultChan <- event:
 	default:
 		logger.Warn("结果通道已满，丢弃结果", zap.Uint64("target_id", task.Target.ID))
 	}
 }
 
-// processResults 处理结果
-func (s *Scheduler) processResults(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-s.stopChan:
-			return
-		case event := <-s.resultChan:
-			s.handleResult(event)
-		}
-	}
-}
-
-// handleResult 处理单个结果
+// handleResult 处理单个结果（更新失败计数、触发告警）
 func (s *Scheduler) handleResult(event *ProbeResultEvent) {
 	v, ok := s.tasks.Load(event.TargetID)
 	if !ok {
@@ -244,8 +256,8 @@ func (s *Scheduler) handleResult(event *ProbeResultEvent) {
 
 	if !event.Result.Success {
 		task.FailCount++
-		// 连续失败3次触发告警
-		if task.FailCount == 3 {
+		// 连续失败达到阈值时触发告警
+		if task.FailCount == s.alertThreshold {
 			select {
 			case s.alertChan <- &AlertEvent{
 				Target:    task.Target,
@@ -258,7 +270,7 @@ func (s *Scheduler) handleResult(event *ProbeResultEvent) {
 			}
 		}
 	} else {
-		if task.FailCount >= 3 {
+		if task.FailCount >= s.alertThreshold {
 			// 恢复通知
 			select {
 			case s.alertChan <- &AlertEvent{

@@ -42,7 +42,7 @@ func main() {
 	logger.Init(cfg.Log.Level, cfg.Log.Format)
 	defer logger.Sync()
 
-	logger.Info("正在启动 Thingsboard RxProbe 探针系统...")
+	logger.Info("正在启动 生产环境通用监控工具...")
 
 	// 初始化数据库
 	if err := database.Init(database.Config{
@@ -62,7 +62,6 @@ func main() {
 	db := database.GetDB()
 
 	// 创建仓库
-	userRepo := repository.NewUserRepository(db)
 	targetRepo := repository.NewTargetRepository(db)
 	resultRepo := repository.NewResultRepository(db)
 	alertRepo := repository.NewAlertRepository(db)
@@ -70,29 +69,24 @@ func main() {
 	// 创建探针工厂
 	proberFactory := prober.NewFactory()
 
-	// 创建调度器
-	sch := scheduler.NewScheduler(proberFactory)
+	// 创建调度器（传入 alertRepo 用于检查未恢复的告警）
+	sch := scheduler.NewScheduler(proberFactory, cfg.Scheduler.AlertThreshold, alertRepo)
 
 	// 创建告警器
 	var alerterInstance alerter.Alerter
 	if cfg.Alerter.WeCom.Enabled && cfg.Alerter.WeCom.WebhookURL != "" {
 		alerterInstance = alerter.NewWeComAlerter(cfg.Alerter.WeCom.WebhookURL)
+		logger.Info(cfg.Alerter.WeCom.WebhookURL)
 		logger.Info("企业微信告警已启用")
 	}
 
 	// 创建服务
-	authService := service.NewAuthService(userRepo, cfg.JWT.Secret, cfg.JWT.ExpireHours)
-	probeService := service.NewProbeService(targetRepo, resultRepo, proberFactory, sch)
+	probeService := service.NewProbeService(targetRepo, resultRepo, alertRepo, proberFactory, sch)
 	alertService := service.NewAlertService(alertRepo, targetRepo, resultRepo, alerterInstance, sch)
 	cleanupService := service.NewCleanupService(resultRepo, alertRepo, cfg.Scheduler.ResultRetentionDays)
 
-	// 初始化默认管理员
-	if err := authService.InitDefaultAdmin(context.Background(), "admin123"); err != nil {
-		logger.Error("初始化默认管理员失败", zap.Error(err))
-	}
-
 	// 创建路由
-	router := api.NewRouter(authService, probeService, alertService)
+	router := api.NewRouter(probeService, alertService)
 	engine := router.Setup(cfg.Server.Mode)
 
 	// 创建 HTTP 服务器

@@ -12,7 +12,6 @@ import (
 type Config struct {
 	Server    ServerConfig    `mapstructure:"server"`
 	Database  DatabaseConfig  `mapstructure:"database"`
-	JWT       JWTConfig       `mapstructure:"jwt"`
 	Alerter   AlerterConfig   `mapstructure:"alerter"`
 	Scheduler SchedulerConfig `mapstructure:"scheduler"`
 	Log       LogConfig       `mapstructure:"log"`
@@ -35,12 +34,6 @@ type DatabaseConfig struct {
 	DBName       string `mapstructure:"dbname"`
 	MaxOpenConns int    `mapstructure:"max_open_conns"`
 	MaxIdleConns int    `mapstructure:"max_idle_conns"`
-}
-
-// JWTConfig JWT 配置
-type JWTConfig struct {
-	Secret      string `mapstructure:"secret"`
-	ExpireHours int    `mapstructure:"expire_hours"`
 }
 
 // AlerterConfig 告警配置
@@ -117,10 +110,6 @@ func setDefaults() {
 	viper.SetDefault("database.max_open_conns", 20)
 	viper.SetDefault("database.max_idle_conns", 10)
 
-	// JWT
-	viper.SetDefault("jwt.secret", "rxprobe-secret-key-change-me")
-	viper.SetDefault("jwt.expire_hours", 24)
-
 	// Alerter
 	viper.SetDefault("alerter.wecom.enabled", false)
 	viper.SetDefault("alerter.wecom.webhook_url", "")
@@ -140,9 +129,6 @@ func setDefaults() {
 func processEnvOverrides() {
 	if v := os.Getenv("DB_PASSWORD"); v != "" {
 		cfg.Database.Password = v
-	}
-	if v := os.Getenv("JWT_SECRET"); v != "" {
-		cfg.JWT.Secret = v
 	}
 	if v := os.Getenv("WECOM_WEBHOOK_URL"); v != "" {
 		cfg.Alerter.WeCom.WebhookURL = v

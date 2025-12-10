@@ -1,0 +1,186 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* 电力监控系统主题 - 深蓝科技风 */
+    --background: 220 25% 6%;
+    --foreground: 200 20% 95%;
+    --card: 220 25% 8%;
+    --card-foreground: 200 20% 95%;
+    --popover: 220 25% 8%;
+    --popover-foreground: 200 20% 95%;
+    
+    /* 主色调 - 电力蓝 */
+    --primary: 199 89% 48%;
+    --primary-foreground: 220 25% 6%;
+    
+    /* 次要色 */
+    --secondary: 215 25% 15%;
+    --secondary-foreground: 200 20% 95%;
+    
+    /* 柔和色 */
+    --muted: 215 25% 12%;
+    --muted-foreground: 215 15% 55%;
+    
+    /* 强调色 */
+    --accent: 215 25% 15%;
+    --accent-foreground: 200 20% 95%;
+    
+    /* 状态色 */
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 200 20% 95%;
+    --success: 142 71% 45%;
+    --success-foreground: 220 25% 6%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 220 25% 6%;
+    
+    /* 边框和输入框 */
+    --border: 215 25% 18%;
+    --input: 215 25% 15%;
+    --ring: 199 89% 48%;
+    
+    /* 圆角 */
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+  }
+
+  /* 自定义滚动条 - 电力蓝风格 */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-background;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-primary/30 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-primary/50;
+  }
+}
+
+@layer utilities {
+  /* 电力蓝渐变文字 */
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-400 to-cyan-300;
+  }
+
+  /* 玻璃态效果 */
+  .glass {
+    @apply bg-card/80 backdrop-blur-xl border border-primary/20;
+  }
+
+  /* 发光效果 */
+  .glow {
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.2);
+  }
+
+  .glow-success {
+    box-shadow: 0 0 15px hsl(var(--success) / 0.3);
+  }
+
+  .glow-destructive {
+    box-shadow: 0 0 15px hsl(var(--destructive) / 0.3);
+  }
+
+  .glow-warning {
+    box-shadow: 0 0 15px hsl(var(--warning) / 0.3);
+  }
+
+  /* 电力网格背景 */
+  .bg-grid {
+    background-image: 
+      linear-gradient(to right, hsl(var(--primary) / 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--primary) / 0.05) 1px, transparent 1px);
+    background-size: 30px 30px;
+  }
+
+  /* 科技感渐变背景 */
+  .bg-gradient-radial {
+    background: 
+      radial-gradient(ellipse at top left, hsl(var(--primary) / 0.1) 0%, transparent 40%),
+      radial-gradient(ellipse at bottom right, hsl(199 89% 48% / 0.05) 0%, transparent 40%);
+  }
+
+  /* 扫描线效果 */
+  .scanline {
+    background: linear-gradient(
+      to bottom,
+      transparent 50%,
+      hsl(var(--primary) / 0.03) 50%
+    );
+    background-size: 100% 4px;
+    pointer-events: none;
+  }
+
+  /* 电力脉冲动画 */
+  .pulse-power {
+    animation: pulse-power 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-power {
+    0%, 100% {
+      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.4);
+    }
+    50% {
+      box-shadow: 0 0 0 10px hsl(var(--primary) / 0);
+    }
+  }
+
+  /* 状态指示灯动画 */
+  .indicator-online {
+    @apply bg-success;
+    box-shadow: 0 0 8px hsl(var(--success));
+    animation: blink-online 2s ease-in-out infinite;
+  }
+
+  .indicator-offline {
+    @apply bg-destructive;
+    box-shadow: 0 0 8px hsl(var(--destructive));
+    animation: blink-offline 1s ease-in-out infinite;
+  }
+
+  .indicator-warning {
+    @apply bg-warning;
+    box-shadow: 0 0 8px hsl(var(--warning));
+    animation: blink-warning 1.5s ease-in-out infinite;
+  }
+
+  @keyframes blink-online {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  @keyframes blink-offline {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  @keyframes blink-warning {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* 动画延迟工具类 */
+  .delay-100 { animation-delay: 100ms; }
+  .delay-200 { animation-delay: 200ms; }
+  .delay-300 { animation-delay: 300ms; }
+  .delay-400 { animation-delay: 400ms; }
+  .delay-500 { animation-delay: 500ms; }
+}

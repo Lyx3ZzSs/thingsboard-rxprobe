@@ -146,7 +146,7 @@ func (s *AlertService) handleAlert(ctx context.Context, event *scheduler.AlertEv
 		}
 
 		// 更新目标状态
-		s.targetRepo.UpdateStatus(ctx, event.Target.ID, "unhealthy", event.Result.Latency.Milliseconds(), event.Result.Message)
+		s.targetRepo.UpdateStatus(ctx, event.Target.ID, model.TargetStatusUnhealthy, event.Result.Latency.Milliseconds(), event.Result.Message)
 
 	} else if event.Status == model.AlertStatusResolved {
 		// 查找并恢复告警记录
@@ -181,7 +181,7 @@ func (s *AlertService) handleAlert(ctx context.Context, event *scheduler.AlertEv
 		}
 
 		// 更新目标状态
-		s.targetRepo.UpdateStatus(ctx, event.Target.ID, "healthy", event.Result.Latency.Milliseconds(), event.Result.Message)
+		s.targetRepo.UpdateStatus(ctx, event.Target.ID, model.TargetStatusHealthy, event.Result.Latency.Milliseconds(), event.Result.Message)
 	}
 }
 
@@ -209,9 +209,9 @@ func (s *AlertService) saveResult(ctx context.Context, event *scheduler.ProbeRes
 	}
 
 	// 更新目标状态
-	status := "healthy"
+	status := model.TargetStatusHealthy
 	if !event.Result.Success {
-		status = "unhealthy"
+		status = model.TargetStatusUnhealthy
 	}
 	s.targetRepo.UpdateStatus(ctx, event.TargetID, status, event.Result.Latency.Milliseconds(), event.Result.Message)
 }
@@ -247,64 +247,6 @@ func (s *AlertService) TriggerAlert(ctx context.Context, target *model.ProbeTarg
 		FailCount: 3,
 	}
 	s.handleAlert(ctx, event)
-}
-
-// CreateRule 创建告警规则
-func (s *AlertService) CreateRule(ctx context.Context, req *model.CreateAlertRuleRequest) (*model.AlertRule, error) {
-	notifyConfigJSON, _ := json.Marshal(req.NotifyConfig)
-
-	rule := &model.AlertRule{
-		Name:           req.Name,
-		Threshold:      req.Threshold,
-		SilenceMinutes: req.SilenceMinutes,
-		Enabled:        req.Enabled,
-		NotifyConfig:   notifyConfigJSON,
-	}
-
-	if err := s.alertRepo.CreateRule(ctx, rule); err != nil {
-		return nil, err
-	}
-	return rule, nil
-}
-
-// UpdateRule 更新告警规则
-func (s *AlertService) UpdateRule(ctx context.Context, id uint64, req *model.UpdateAlertRuleRequest) (*model.AlertRule, error) {
-	rule, err := s.alertRepo.GetRuleByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	if req.Name != "" {
-		rule.Name = req.Name
-	}
-	if req.Threshold > 0 {
-		rule.Threshold = req.Threshold
-	}
-	if req.SilenceMinutes > 0 {
-		rule.SilenceMinutes = req.SilenceMinutes
-	}
-	if req.Enabled != nil {
-		rule.Enabled = *req.Enabled
-	}
-	if req.NotifyConfig != nil {
-		notifyConfigJSON, _ := json.Marshal(req.NotifyConfig)
-		rule.NotifyConfig = notifyConfigJSON
-	}
-
-	if err := s.alertRepo.UpdateRule(ctx, rule); err != nil {
-		return nil, err
-	}
-	return rule, nil
-}
-
-// DeleteRule 删除告警规则
-func (s *AlertService) DeleteRule(ctx context.Context, id uint64) error {
-	return s.alertRepo.DeleteRule(ctx, id)
-}
-
-// ListRules 获取告警规则列表
-func (s *AlertService) ListRules(ctx context.Context) ([]*model.AlertRule, error) {
-	return s.alertRepo.ListRules(ctx)
 }
 
 // ListRecords 获取告警记录列表

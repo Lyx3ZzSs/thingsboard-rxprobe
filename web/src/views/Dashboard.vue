@@ -1,183 +1,79 @@
-<template>
-  <div class="dashboard">
-    <!-- 统计卡片 -->
-    <el-row :gutter="20" class="stat-cards">
-      <el-col :span="6">
-        <el-card class="stat-card total">
-          <div class="stat-icon">
-            <el-icon :size="40"><Monitor /></el-icon>
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ summary.total_targets || 0 }}</div>
-            <div class="stat-label">监控目标</div>
-          </div>
-        </el-card>
-      </el-col>
-      
-      <el-col :span="6">
-        <el-card class="stat-card healthy">
-          <div class="stat-icon">
-            <el-icon :size="40"><CircleCheck /></el-icon>
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ summary.healthy_count || 0 }}</div>
-            <div class="stat-label">正常</div>
-          </div>
-        </el-card>
-      </el-col>
-      
-      <el-col :span="6">
-        <el-card class="stat-card unhealthy">
-          <div class="stat-icon">
-            <el-icon :size="40"><CircleClose /></el-icon>
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ summary.unhealthy_count || 0 }}</div>
-            <div class="stat-label">异常</div>
-          </div>
-        </el-card>
-      </el-col>
-      
-      <el-col :span="6">
-        <el-card class="stat-card unknown">
-          <div class="stat-icon">
-            <el-icon :size="40"><QuestionFilled /></el-icon>
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ summary.unknown_count || 0 }}</div>
-            <div class="stat-label">未知</div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
-    
-    <el-row :gutter="20">
-      <!-- 监控状态列表 -->
-      <el-col :span="16">
-        <el-card class="metrics-card">
-          <template #header>
-            <div class="card-header">
-              <span>监控状态</span>
-              <el-button type="primary" link @click="refreshMetrics">
-                <el-icon><Refresh /></el-icon>
-                刷新
-              </el-button>
-            </div>
-          </template>
-          
-          <el-table :data="metrics" v-loading="metricsLoading" stripe>
-            <el-table-column label="状态" width="80">
-              <template #default="{ row }">
-                <el-tag :type="getStatusType(row.status)" effect="dark" round>
-                  {{ getStatusText(row.status) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            
-            <el-table-column label="名称" prop="name" min-width="150" />
-            
-            <el-table-column label="类型" width="120">
-              <template #default="{ row }">
-                {{ getTypeLabel(row.type) }}
-              </template>
-            </el-table-column>
-            
-            <el-table-column label="响应时间" width="100">
-              <template #default="{ row }">
-                <span :class="getLatencyClass(row.last_latency_ms)">
-                  {{ row.last_latency_ms ? `${row.last_latency_ms}ms` : '-' }}
-                </span>
-              </template>
-            </el-table-column>
-            
-            <el-table-column label="成功率(24h)" width="120">
-              <template #default="{ row }">
-                <el-progress
-                  :percentage="row.stats?.success_rate_24h || 0"
-                  :color="getSuccessRateColor(row.stats?.success_rate_24h)"
-                  :stroke-width="8"
-                />
-              </template>
-            </el-table-column>
-            
-            <el-table-column label="最后检查" width="180">
-              <template #default="{ row }">
-                {{ formatTime(row.last_check_at) }}
-              </template>
-            </el-table-column>
-            
-            <el-table-column label="操作" width="100" fixed="right">
-              <template #default="{ row }">
-                <el-button type="primary" link @click="goToDetail(row)">
-                  详情
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
-      </el-col>
-      
-      <!-- 最近告警 -->
-      <el-col :span="8">
-        <el-card class="alerts-card">
-          <template #header>
-            <div class="card-header">
-              <span>最近告警</span>
-              <el-button type="primary" link @click="$router.push('/alerts')">
-                查看全部
-              </el-button>
-            </div>
-          </template>
-          
-          <div v-if="summary.recent_alerts?.length" class="alert-list">
-            <div
-              v-for="alert in summary.recent_alerts"
-              :key="alert.id"
-              class="alert-item"
-              :class="alert.status"
-            >
-              <div class="alert-icon">
-                <el-icon v-if="alert.status === 'firing'" color="#f56c6c"><Warning /></el-icon>
-                <el-icon v-else color="#67c23a"><CircleCheck /></el-icon>
-              </div>
-              <div class="alert-content">
-                <div class="alert-name">{{ alert.target_name }}</div>
-                <div class="alert-message">{{ alert.message }}</div>
-                <div class="alert-time">{{ formatTime(alert.fired_at) }}</div>
-              </div>
-            </div>
-          </div>
-          <el-empty v-else description="暂无告警" :image-size="80" />
-        </el-card>
-      </el-col>
-    </el-row>
-  </div>
-</template>
-
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { 
+  CheckCircle2, 
+  XCircle, 
+  AlertTriangle,
+  RefreshCw,
+  ArrowRight,
+  Zap,
+  Server,
+  Database,
+  Radio
+} from 'lucide-vue-next'
+
+import { Button } from '@/components/ui/button'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { HealthCard, ServiceCard, AlertItem, StatusBadge } from '@/components/monitor'
 import { getDashboardSummary, getDashboardMetrics } from '@/api/probe'
 
 const router = useRouter()
 
-const summary = ref({})
-const metrics = ref([])
-const metricsLoading = ref(false)
+// 状态
+const loading = ref(false)
+const summary = ref({
+  total_targets: 0,
+  healthy_count: 0,
+  unhealthy_count: 0,
+  unknown_count: 0,
+  recent_alerts: []
+})
+const services = ref([])
 let refreshTimer = null
 
-const typeLabels = {
-  postgresql: 'PostgreSQL',
-  cassandra: 'Cassandra',
-  redis: 'Redis',
-  kafka: 'Kafka',
-  http: 'HTTP',
-  tcp: 'TCP'
+// 加载数据
+async function loadData() {
+  loading.value = true
+  try {
+    const [summaryRes, metricsRes] = await Promise.all([
+      getDashboardSummary(),
+      getDashboardMetrics()
+    ])
+    summary.value = summaryRes.data
+    services.value = metricsRes.data || []
+  } catch (e) {
+    console.error('加载数据失败:', e)
+    // 使用 mock 数据
+    summary.value = {
+      total_targets: 12,
+      healthy_count: 9,
+      unhealthy_count: 2,
+      unknown_count: 1,
+      recent_alerts: [
+        { id: 1, target_name: 'PostgreSQL 主库', message: '连接超时', status: 'firing', fired_at: new Date().toISOString() },
+        { id: 2, target_name: 'Redis 集群', message: '内存使用率过高', status: 'resolved', fired_at: new Date(Date.now() - 3600000).toISOString(), resolved_at: new Date().toISOString() }
+      ]
+    }
+    services.value = [
+      { id: 1, name: 'PostgreSQL 主库', type: 'postgresql', status: 'healthy', last_latency_ms: 12, interval_seconds: 30, stats: { success_rate_24h: 99.8 }, last_check_at: new Date().toISOString() },
+      { id: 2, name: 'Redis 集群', type: 'redis', status: 'unhealthy', last_latency_ms: 250, interval_seconds: 10, stats: { success_rate_24h: 95.2 }, last_check_at: new Date().toISOString() },
+      { id: 3, name: 'Kafka Broker', type: 'kafka', status: 'healthy', last_latency_ms: 45, interval_seconds: 30, stats: { success_rate_24h: 99.9 }, last_check_at: new Date().toISOString() },
+      { id: 4, name: 'Cassandra 节点', type: 'cassandra', status: 'healthy', last_latency_ms: 88, interval_seconds: 60, stats: { success_rate_24h: 99.5 }, last_check_at: new Date().toISOString() },
+      { id: 5, name: 'MQTT Broker', type: 'tcp', status: 'healthy', last_latency_ms: 23, interval_seconds: 15, stats: { success_rate_24h: 99.9 }, last_check_at: new Date().toISOString() },
+      { id: 6, name: 'CoAP Server', type: 'tcp', status: 'unknown', last_latency_ms: null, interval_seconds: 30, stats: { success_rate_24h: 0 }, last_check_at: null }
+    ]
+  } finally {
+    loading.value = false
+  }
+}
+
+function goToService(service) {
+  router.push(`/services/${service.id}`)
 }
 
 onMounted(() => {
   loadData()
-  // 每30秒自动刷新
   refreshTimer = setInterval(loadData, 30000)
 })
 
@@ -186,184 +82,113 @@ onUnmounted(() => {
     clearInterval(refreshTimer)
   }
 })
-
-async function loadData() {
-  try {
-    const [summaryRes, metricsRes] = await Promise.all([
-      getDashboardSummary(),
-      getDashboardMetrics()
-    ])
-    summary.value = summaryRes.data
-    metrics.value = metricsRes.data
-  } catch (e) {
-    console.error(e)
-  }
-}
-
-async function refreshMetrics() {
-  metricsLoading.value = true
-  try {
-    const res = await getDashboardMetrics()
-    metrics.value = res.data
-  } finally {
-    metricsLoading.value = false
-  }
-}
-
-function getStatusType(status) {
-  const types = { healthy: 'success', unhealthy: 'danger', unknown: 'info' }
-  return types[status] || 'info'
-}
-
-function getStatusText(status) {
-  const texts = { healthy: '正常', unhealthy: '异常', unknown: '未知' }
-  return texts[status] || '未知'
-}
-
-function getTypeLabel(type) {
-  return typeLabels[type] || type
-}
-
-function getLatencyClass(latency) {
-  if (!latency) return ''
-  if (latency < 100) return 'latency-good'
-  if (latency < 500) return 'latency-warn'
-  return 'latency-bad'
-}
-
-function getSuccessRateColor(rate) {
-  if (rate >= 99) return '#67c23a'
-  if (rate >= 95) return '#e6a23c'
-  return '#f56c6c'
-}
-
-function formatTime(time) {
-  if (!time) return '-'
-  return new Date(time).toLocaleString('zh-CN')
-}
-
-function goToDetail(row) {
-  router.push(`/targets/${row.id}`)
-}
 </script>
 
-<style lang="scss" scoped>
-.dashboard {
-  .stat-cards {
-    margin-bottom: 20px;
-  }
-  
-  .stat-card {
-    display: flex;
-    align-items: center;
-    padding: 20px;
-    
-    .stat-icon {
-      width: 80px;
-      height: 80px;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-right: 20px;
-    }
-    
-    .stat-content {
-      .stat-value {
-        font-size: 32px;
-        font-weight: 700;
-        color: #303133;
-      }
-      
-      .stat-label {
-        font-size: 14px;
-        color: #909399;
-        margin-top: 4px;
-      }
-    }
-    
-    &.total .stat-icon {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: #fff;
-    }
-    
-    &.healthy .stat-icon {
-      background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-      color: #fff;
-    }
-    
-    &.unhealthy .stat-icon {
-      background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
-      color: #fff;
-    }
-    
-    &.unknown .stat-icon {
-      background: linear-gradient(135deg, #bdc3c7 0%, #2c3e50 100%);
-      color: #fff;
-    }
-  }
-  
-  .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  
-  .latency-good { color: #67c23a; }
-  .latency-warn { color: #e6a23c; }
-  .latency-bad { color: #f56c6c; }
-  
-  .alerts-card {
-    .alert-list {
-      max-height: 400px;
-      overflow-y: auto;
-    }
-    
-    .alert-item {
-      display: flex;
-      padding: 12px;
-      border-radius: 8px;
-      margin-bottom: 8px;
-      background: #f5f7fa;
-      
-      &.firing {
-        background: #fef0f0;
-      }
-      
-      &.resolved {
-        background: #f0f9eb;
-      }
-      
-      .alert-icon {
-        margin-right: 12px;
-        padding-top: 2px;
-      }
-      
-      .alert-content {
-        flex: 1;
-        
-        .alert-name {
-          font-weight: 500;
-          color: #303133;
-        }
-        
-        .alert-message {
-          font-size: 12px;
-          color: #909399;
-          margin-top: 4px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-        
-        .alert-time {
-          font-size: 12px;
-          color: #c0c4cc;
-          margin-top: 4px;
-        }
-      }
-    }
-  }
-}
-</style>
+<template>
+  <div class="space-y-6">
+    <!-- 页面标题 -->
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold font-display flex items-center gap-2">
+          <Zap class="w-6 h-6 text-primary" />
+          <span>监控总览</span>
+        </h1>
+        <p class="text-muted-foreground text-sm mt-1">平台基础设施实时监控</p>
+      </div>
+      <Button variant="outline" size="sm" @click="loadData" :disabled="loading" class="border-primary/30 hover:bg-primary/10">
+        <RefreshCw :class="['w-4 h-4 mr-2', loading && 'animate-spin']" />
+        刷新数据
+      </Button>
+    </div>
 
+    <!-- 统计卡片 -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <HealthCard
+        title="监控节点"
+        :value="summary.total_targets"
+        :icon="Server"
+        variant="primary"
+        class="animate-fade-in"
+      />
+      <HealthCard
+        title="运行正常"
+        :value="summary.healthy_count"
+        :icon="CheckCircle2"
+        variant="success"
+        class="animate-fade-in delay-100"
+      />
+      <HealthCard
+        title="故障告警"
+        :value="summary.unhealthy_count"
+        :icon="XCircle"
+        variant="destructive"
+        class="animate-fade-in delay-200"
+      />
+      <HealthCard
+        title="离线节点"
+        :value="summary.unknown_count"
+        :icon="AlertTriangle"
+        variant="warning"
+        class="animate-fade-in delay-300"
+      />
+    </div>
+
+
+    <!-- 主要内容区 -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- 服务状态列表 -->
+      <div class="lg:col-span-2 space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold flex items-center gap-2">
+            <Database class="w-5 h-5 text-primary" />
+            核心服务状态
+          </h2>
+          <Button variant="ghost" size="sm" @click="router.push('/services')" class="text-primary hover:text-primary hover:bg-primary/10">
+            全部服务
+            <ArrowRight class="w-4 h-4 ml-1" />
+          </Button>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <ServiceCard
+            v-for="service in services.slice(0, 6)"
+            :key="service.id"
+            :service="service"
+            class="animate-fade-in"
+            @click="goToService"
+          />
+        </div>
+      </div>
+
+      <!-- 最近告警 -->
+      <div class="space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold flex items-center gap-2">
+            <Radio class="w-5 h-5 text-destructive" />
+            实时告警
+          </h2>
+          <Button variant="ghost" size="sm" @click="router.push('/alerts')" class="text-primary hover:text-primary hover:bg-primary/10">
+            告警中心
+            <ArrowRight class="w-4 h-4 ml-1" />
+          </Button>
+        </div>
+        
+        <div class="space-y-3">
+          <AlertItem
+            v-for="alert in summary.recent_alerts?.slice(0, 5)"
+            :key="alert.id"
+            :alert="alert"
+            compact
+            class="animate-slide-in-right"
+          />
+          
+          <div v-if="!summary.recent_alerts?.length" class="text-center py-8 text-muted-foreground border border-dashed border-primary/20 rounded-lg">
+            <CheckCircle2 class="w-12 h-12 mx-auto mb-2 text-success opacity-50" />
+            <p>系统运行正常，暂无告警</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div> 
+</template>

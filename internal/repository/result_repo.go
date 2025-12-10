@@ -89,6 +89,14 @@ func (r *ResultRepository) DeleteOld(ctx context.Context, retentionDays int) (in
 	return result.RowsAffected, result.Error
 }
 
+// DeleteByTargetID 删除指定目标的所有探测结果
+func (r *ResultRepository) DeleteByTargetID(ctx context.Context, targetID uint64) (int64, error) {
+	result := r.db.WithContext(ctx).
+		Where("target_id = ?", targetID).
+		Delete(&model.ProbeResult{})
+	return result.RowsAffected, result.Error
+}
+
 // GetSuccessRate 获取成功率统计
 func (r *ResultRepository) GetSuccessRate(ctx context.Context, targetID uint64, duration time.Duration) (float64, error) {
 	startTime := time.Now().Add(-duration)

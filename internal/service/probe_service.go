@@ -18,6 +18,7 @@ import (
 type ProbeService struct {
 	targetRepo *repository.TargetRepository
 	resultRepo *repository.ResultRepository
+	alertRepo  *repository.AlertRepository
 	factory    *prober.Factory
 	scheduler  *scheduler.Scheduler
 }
@@ -26,12 +27,14 @@ type ProbeService struct {
 func NewProbeService(
 	targetRepo *repository.TargetRepository,
 	resultRepo *repository.ResultRepository,
+	alertRepo *repository.AlertRepository,
 	factory *prober.Factory,
 	sch *scheduler.Scheduler,
 ) *ProbeService {
 	return &ProbeService{
 		targetRepo: targetRepo,
 		resultRepo: resultRepo,
+		alertRepo:  alertRepo,
 		factory:    factory,
 		scheduler:  sch,
 	}
@@ -68,6 +71,14 @@ func (s *ProbeService) CreateTarget(ctx context.Context, req *model.CreateTarget
 		req.IntervalSeconds = 30
 	}
 
+	// 根据 enabled 状态设置初始 status
+	initialStatus := model.TargetStatusUnknown
+	initialMessage := "等待首次探测"
+	if !req.Enabled {
+		initialStatus = model.TargetStatusDisabled
+		initialMessage = "监控已禁用"
+	}
+
 	probeTarget := &model.ProbeTarget{
 		Name:            req.Name,
 		Type:            req.Type,
@@ -75,7 +86,8 @@ func (s *ProbeService) CreateTarget(ctx context.Context, req *model.CreateTarget
 		TimeoutSeconds:  req.TimeoutSeconds,
 		IntervalSeconds: req.IntervalSeconds,
 		Enabled:         req.Enabled,
-		Status:          "unknown",
+		Status:          initialStatus,
+		LastMessage:     initialMessage,
 	}
 
 	if err := s.targetRepo.Create(ctx, probeTarget); err != nil {
@@ -129,7 +141,21 @@ func (s *ProbeService) UpdateTarget(ctx context.Context, id uint64, req *model.U
 		target.IntervalSeconds = req.IntervalSeconds
 	}
 	if req.Enabled != nil {
+		oldEnabled := target.Enabled
 		target.Enabled = *req.Enabled
+
+		// 当禁用时，将状态设置为 disabled
+		if !*req.Enabled {
+			target.Status = model.TargetStatusDisabled
+			target.LastMessage = "监控已禁用"
+		} else if oldEnabled != *req.Enabled {
+			// 从禁用变为启用：重置所有状态信息，等待重新探测
+			target.Status = model.TargetStatusUnknown
+			target.LastMessage = "等待首次探测"
+			target.LastCheckAt = nil
+			target.LastLatencyMs = 0
+		}
+		// 如果原本就是启用状态，保持现有的健康状态不变
 	}
 
 	if err := s.targetRepo.Update(ctx, target); err != nil {
@@ -149,9 +175,40 @@ func (s *ProbeService) DeleteTarget(ctx context.Context, id uint64) error {
 	// 从调度器移除
 	s.scheduler.RemoveTask(id)
 
+	// 删除关联的探测结果
+	if deletedResults, err := s.resultRepo.DeleteByTargetID(ctx, id); err != nil {
+		logger.Error("删除探测结果失败",
+			zap.Uint64("target_id", id),
+			zap.Error(err),
+		)
+		return fmt.Errorf("删除探测结果失败: %w", err)
+	} else {
+		logger.Info("已删除探测结果",
+			zap.Uint64("target_id", id),
+			zap.Int64("count", deletedResults),
+		)
+	}
+
+	// 删除关联的告警记录
+	if deletedAlerts, err := s.alertRepo.DeleteByTargetID(ctx, id); err != nil {
+		logger.Error("删除告警记录失败",
+			zap.Uint64("target_id", id),
+			zap.Error(err),
+		)
+		return fmt.Errorf("删除告警记录失败: %w", err)
+	} else {
+		logger.Info("已删除告警记录",
+			zap.Uint64("target_id", id),
+			zap.Int64("count", deletedAlerts),
+		)
+	}
+
+	// 删除探测目标
 	if err := s.targetRepo.Delete(ctx, id); err != nil {
 		return fmt.Errorf("删除目标失败: %w", err)
 	}
+
+	logger.Info("探测目标已删除", zap.Uint64("target_id", id))
 	return nil
 }
 

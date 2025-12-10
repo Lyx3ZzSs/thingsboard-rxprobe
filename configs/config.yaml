@@ -15,22 +15,17 @@ database:
   max_open_conns: 20
   max_idle_conns: 10
 
-jwt:
-  secret: rxprobe-secret-key-change-me  # 可通过环境变量 JWT_SECRET 覆盖
-  expire_hours: 24
-
 alerter:
   wecom:
     enabled: true
-    webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=d88b9ab7-9a4a-4ece-a796-890daf34cc27"  # 可通过环境变量 WECOM_WEBHOOK_URL 覆盖
+    webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=bb594301-d7b5-4c5b-b2bc-402d33e56e07"  # 可通过环境变量 WECOM_WEBHOOK_URL 覆盖
 
 scheduler:
-  default_interval: 30        # 默认探测间隔（秒）
-  default_timeout: 5          # 默认超时时间（秒）
+  default_interval: 10        # 默认探测间隔（秒）
+  default_timeout: 3          # 默认超时时间（秒）
   alert_threshold: 3          # 告警阈值（连续失败次数）
-  result_retention_days: 30   # 探测结果保留天数
+  result_retention_days: 10   # 探测结果保留天数
 
 log:
   level: info     # debug/info/warn/error
   format: console # console/json
-

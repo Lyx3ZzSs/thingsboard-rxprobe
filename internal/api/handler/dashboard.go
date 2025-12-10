@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/thingsboard-rxprobe/internal/model"
 	"github.com/thingsboard-rxprobe/internal/repository"
 	"github.com/thingsboard-rxprobe/internal/service"
 )
@@ -37,13 +38,15 @@ func (h *DashboardHandler) GetSummary(c *gin.Context) {
 	}
 
 	// 统计各状态数量
-	var healthyCount, unhealthyCount, unknownCount int64
+	var healthyCount, unhealthyCount, unknownCount, disabledCount int64
 	for _, t := range targets {
 		switch t.Status {
-		case "healthy":
+		case model.TargetStatusHealthy:
 			healthyCount++
-		case "unhealthy":
+		case model.TargetStatusUnhealthy:
 			unhealthyCount++
+		case model.TargetStatusDisabled:
+			disabledCount++
 		default:
 			unknownCount++
 		}
@@ -64,6 +67,7 @@ func (h *DashboardHandler) GetSummary(c *gin.Context) {
 		"healthy_count":   healthyCount,
 		"unhealthy_count": unhealthyCount,
 		"unknown_count":   unknownCount,
+		"disabled_count":  disabledCount,
 		"recent_alerts":   alerts,
 	})
 }

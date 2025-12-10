@@ -1,13 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useUserStore } from '@/stores/user'
 
 const routes = [
-  {
-    path: '/login',
-    name: 'Login',
-    component: () => import('@/views/Login.vue'),
-    meta: { requiresAuth: false }
-  },
   {
     path: '/',
     component: () => import('@/views/Layout.vue'),
@@ -17,33 +10,31 @@ const routes = [
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('@/views/Dashboard.vue'),
-        meta: { title: '仪表盘', icon: 'Odometer' }
+        meta: { title: '仪表盘' }
       },
       {
-        path: 'targets',
-        name: 'Targets',
-        component: () => import('@/views/Targets.vue'),
-        meta: { title: '监控目标', icon: 'Monitor' }
+        path: 'services',
+        name: 'Services',
+        component: () => import('@/views/Services.vue'),
+        meta: { title: '监控服务' }
       },
       {
-        path: 'targets/:id',
-        name: 'TargetDetail',
-        component: () => import('@/views/TargetDetail.vue'),
-        meta: { title: '目标详情', hidden: true }
+        path: 'services/:id',
+        name: 'ServiceDetail',
+        component: () => import('@/views/ServiceDetail.vue'),
+        meta: { title: '服务详情' }
       },
       {
         path: 'alerts',
         name: 'Alerts',
         component: () => import('@/views/Alerts.vue'),
-        meta: { title: '告警记录', icon: 'Bell' }
-      },
-      {
-        path: 'rules',
-        name: 'Rules',
-        component: () => import('@/views/Rules.vue'),
-        meta: { title: '告警规则', icon: 'Setting' }
+        meta: { title: '告警记录' }
       }
     ]
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    redirect: '/dashboard'
   }
 ]
 
@@ -52,21 +43,4 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to, from, next) => {
-  const userStore = useUserStore()
-  
-  if (to.meta.requiresAuth === false) {
-    next()
-    return
-  }
-  
-  if (!userStore.token) {
-    next('/login')
-    return
-  }
-  
-  next()
-})
-
 export default router
-

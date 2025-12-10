@@ -18,48 +18,6 @@ func NewAlertRepository(db *gorm.DB) *AlertRepository {
 	return &AlertRepository{db: db}
 }
 
-// CreateRule 创建告警规则
-func (r *AlertRepository) CreateRule(ctx context.Context, rule *model.AlertRule) error {
-	return r.db.WithContext(ctx).Create(rule).Error
-}
-
-// UpdateRule 更新告警规则
-func (r *AlertRepository) UpdateRule(ctx context.Context, rule *model.AlertRule) error {
-	return r.db.WithContext(ctx).Save(rule).Error
-}
-
-// DeleteRule 删除告警规则
-func (r *AlertRepository) DeleteRule(ctx context.Context, id uint64) error {
-	return r.db.WithContext(ctx).Delete(&model.AlertRule{}, id).Error
-}
-
-// GetRuleByID 根据 ID 获取告警规则
-func (r *AlertRepository) GetRuleByID(ctx context.Context, id uint64) (*model.AlertRule, error) {
-	var rule model.AlertRule
-	err := r.db.WithContext(ctx).First(&rule, id).Error
-	if err != nil {
-		return nil, err
-	}
-	return &rule, nil
-}
-
-// ListRules 获取告警规则列表
-func (r *AlertRepository) ListRules(ctx context.Context) ([]*model.AlertRule, error) {
-	var rules []*model.AlertRule
-	err := r.db.WithContext(ctx).Order("id DESC").Find(&rules).Error
-	return rules, err
-}
-
-// GetDefaultRule 获取默认告警规则
-func (r *AlertRepository) GetDefaultRule(ctx context.Context) (*model.AlertRule, error) {
-	var rule model.AlertRule
-	err := r.db.WithContext(ctx).Where("enabled = ?", true).First(&rule).Error
-	if err != nil {
-		return nil, err
-	}
-	return &rule, nil
-}
-
 // CreateRecord 创建告警记录
 func (r *AlertRepository) CreateRecord(ctx context.Context, record *model.AlertRecord) error {
 	return r.db.WithContext(ctx).Create(record).Error
@@ -180,4 +138,22 @@ func (r *AlertRepository) DeleteOld(ctx context.Context, retentionDays int) (int
 		Where("fired_at < ?", cutoff).
 		Delete(&model.AlertRecord{})
 	return result.RowsAffected, result.Error
+}
+
+// DeleteByTargetID 删除指定目标的所有告警记录
+func (r *AlertRepository) DeleteByTargetID(ctx context.Context, targetID uint64) (int64, error) {
+	result := r.db.WithContext(ctx).
+		Where("target_id = ?", targetID).
+		Delete(&model.AlertRecord{})
+	return result.RowsAffected, result.Error
+}
+
+// HasUnresolvedAlert 检查目标是否有未恢复的告警记录
+// 实现 scheduler.AlertChecker 接口
+func (r *AlertRepository) HasUnresolvedAlert(ctx context.Context, targetID uint64) bool {
+	var count int64
+	r.db.WithContext(ctx).Model(&model.AlertRecord{}).
+		Where("target_id = ? AND status = ?", targetID, model.AlertStatusFiring).
+		Count(&count)
+	return count > 0
 }
