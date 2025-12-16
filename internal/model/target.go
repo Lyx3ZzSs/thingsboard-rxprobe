@@ -16,19 +16,21 @@ const (
 
 // ProbeTarget 探测目标
 type ProbeTarget struct {
-	ID              uint64         `json:"id" gorm:"primaryKey"`
-	Name            string         `json:"name" gorm:"size:128;not null"`
-	Type            string         `json:"type" gorm:"size:32;not null;index"`
-	Config          datatypes.JSON `json:"config" gorm:"type:jsonb"`
-	TimeoutSeconds  int            `json:"timeout_seconds" gorm:"default:5"`
-	IntervalSeconds int            `json:"interval_seconds" gorm:"default:30"`
-	Enabled         bool           `json:"enabled" gorm:"default:true;index"`
-	Status          string         `json:"status" gorm:"size:16;default:'unknown'"` // healthy, unhealthy, unknown, disabled
-	LastCheckAt     *time.Time     `json:"last_check_at"`
-	LastLatencyMs   int64          `json:"last_latency_ms"`
-	LastMessage     string         `json:"last_message" gorm:"size:512"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	ID               uint64         `json:"id" gorm:"primaryKey"`
+	Name             string         `json:"name" gorm:"size:128;not null"`
+	Type             string         `json:"type" gorm:"size:32;not null;index"`
+	Config           datatypes.JSON `json:"config" gorm:"type:jsonb"`
+	TimeoutSeconds   int            `json:"timeout_seconds" gorm:"default:5"`
+	IntervalSeconds  int            `json:"interval_seconds" gorm:"default:30"`
+	Enabled          bool           `json:"enabled" gorm:"default:true;index"`
+	Status           string         `json:"status" gorm:"size:16;default:'unknown'"` // healthy, unhealthy, unknown, disabled
+	LastCheckAt      *time.Time     `json:"last_check_at"`
+	LastLatencyMs    int64          `json:"last_latency_ms"`
+	LastMessage      string         `json:"last_message" gorm:"size:512"`
+	Group            string         `json:"group" gorm:"size:64;index"`           // 分组
+	NotifyChannelIDs datatypes.JSON `json:"notify_channel_ids" gorm:"type:jsonb"` // 通知渠道ID列表
+	CreatedAt        time.Time      `json:"created_at"`
+	UpdatedAt        time.Time      `json:"updated_at"`
 }
 
 // TableName 表名
@@ -55,21 +57,25 @@ func (ProbeResult) TableName() string {
 
 // CreateTargetRequest 创建目标请求
 type CreateTargetRequest struct {
-	Name            string         `json:"name" binding:"required"`
-	Type            string         `json:"type" binding:"required"`
-	Config          map[string]any `json:"config" binding:"required"`
-	TimeoutSeconds  int            `json:"timeout_seconds"`
-	IntervalSeconds int            `json:"interval_seconds"`
-	Enabled         bool           `json:"enabled"`
+	Name             string         `json:"name" binding:"required"`
+	Type             string         `json:"type" binding:"required"`
+	Config           map[string]any `json:"config" binding:"required"`
+	TimeoutSeconds   int            `json:"timeout_seconds"`
+	IntervalSeconds  int            `json:"interval_seconds"`
+	Enabled          bool           `json:"enabled"`
+	Group            string         `json:"group"`              // 分组
+	NotifyChannelIDs []uint64       `json:"notify_channel_ids"` // 通知渠道ID列表
 }
 
 // UpdateTargetRequest 更新目标请求
 type UpdateTargetRequest struct {
-	Name            string         `json:"name"`
-	Config          map[string]any `json:"config"`
-	TimeoutSeconds  int            `json:"timeout_seconds"`
-	IntervalSeconds int            `json:"interval_seconds"`
-	Enabled         *bool          `json:"enabled"`
+	Name             string         `json:"name"`
+	Config           map[string]any `json:"config"`
+	TimeoutSeconds   int            `json:"timeout_seconds"`
+	IntervalSeconds  int            `json:"interval_seconds"`
+	Enabled          *bool          `json:"enabled"`
+	Group            *string        `json:"group"`              // 分组
+	NotifyChannelIDs *[]uint64      `json:"notify_channel_ids"` // 通知渠道ID列表
 }
 
 // TestTargetRequest 测试目标请求

@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/thingsboard-rxprobe/internal/alerter"
 	"github.com/thingsboard-rxprobe/internal/api"
 	"github.com/thingsboard-rxprobe/internal/config"
 	"github.com/thingsboard-rxprobe/internal/prober"
@@ -65,6 +64,8 @@ func main() {
 	targetRepo := repository.NewTargetRepository(db)
 	resultRepo := repository.NewResultRepository(db)
 	alertRepo := repository.NewAlertRepository(db)
+	notifierRepo := repository.NewNotifierRepository(db)
+	userRepo := repository.NewUserRepository(db)
 
 	// 创建探针工厂
 	proberFactory := prober.NewFactory()
@@ -72,21 +73,22 @@ func main() {
 	// 创建调度器（传入 alertRepo 用于检查未恢复的告警）
 	sch := scheduler.NewScheduler(proberFactory, cfg.Scheduler.AlertThreshold, alertRepo)
 
-	// 创建告警器
-	var alerterInstance alerter.Alerter
-	if cfg.Alerter.WeCom.Enabled && cfg.Alerter.WeCom.WebhookURL != "" {
-		alerterInstance = alerter.NewWeComAlerter(cfg.Alerter.WeCom.WebhookURL)
-		logger.Info(cfg.Alerter.WeCom.WebhookURL)
-		logger.Info("企业微信告警已启用")
+	// 解析JWT过期时间
+	jwtExpiry := 7 * 24 * time.Hour // 默认7天
+	if cfg.Auth.JWTExpiry != "" {
+		if parsed, err := time.ParseDuration(cfg.Auth.JWTExpiry); err == nil {
+			jwtExpiry = parsed
+		}
 	}
 
 	// 创建服务
 	probeService := service.NewProbeService(targetRepo, resultRepo, alertRepo, proberFactory, sch)
-	alertService := service.NewAlertService(alertRepo, targetRepo, resultRepo, alerterInstance, sch)
+	alertService := service.NewAlertService(alertRepo, targetRepo, resultRepo, notifierRepo, sch)
 	cleanupService := service.NewCleanupService(resultRepo, alertRepo, cfg.Scheduler.ResultRetentionDays)
+	authService := service.NewAuthService(userRepo, cfg.Auth.JWTSecret, jwtExpiry)
 
 	// 创建路由
-	router := api.NewRouter(probeService, alertService)
+	router := api.NewRouter(probeService, alertService, authService, notifierRepo)
 	engine := router.Setup(cfg.Server.Mode)
 
 	// 创建 HTTP 服务器

@@ -12,9 +12,9 @@ import (
 type Config struct {
 	Server    ServerConfig    `mapstructure:"server"`
 	Database  DatabaseConfig  `mapstructure:"database"`
-	Alerter   AlerterConfig   `mapstructure:"alerter"`
 	Scheduler SchedulerConfig `mapstructure:"scheduler"`
 	Log       LogConfig       `mapstructure:"log"`
+	Auth      AuthConfig      `mapstructure:"auth"`
 }
 
 // ServerConfig 服务器配置
@@ -36,17 +36,6 @@ type DatabaseConfig struct {
 	MaxIdleConns int    `mapstructure:"max_idle_conns"`
 }
 
-// AlerterConfig 告警配置
-type AlerterConfig struct {
-	WeCom WeComConfig `mapstructure:"wecom"`
-}
-
-// WeComConfig 企业微信配置
-type WeComConfig struct {
-	Enabled    bool   `mapstructure:"enabled"`
-	WebhookURL string `mapstructure:"webhook_url"`
-}
-
 // SchedulerConfig 调度配置
 type SchedulerConfig struct {
 	DefaultInterval     int `mapstructure:"default_interval"`      // 默认探测间隔（秒）
@@ -59,6 +48,12 @@ type SchedulerConfig struct {
 type LogConfig struct {
 	Level  string `mapstructure:"level"`  // debug, info, warn, error
 	Format string `mapstructure:"format"` // console, json
+}
+
+// AuthConfig 认证配置
+type AuthConfig struct {
+	JWTSecret string `mapstructure:"jwt_secret"` // JWT密钥
+	JWTExpiry string `mapstructure:"jwt_expiry"` // JWT过期时间，如：168h (7天)
 }
 
 var cfg *Config
@@ -110,10 +105,6 @@ func setDefaults() {
 	viper.SetDefault("database.max_open_conns", 20)
 	viper.SetDefault("database.max_idle_conns", 10)
 
-	// Alerter
-	viper.SetDefault("alerter.wecom.enabled", false)
-	viper.SetDefault("alerter.wecom.webhook_url", "")
-
 	// Scheduler
 	viper.SetDefault("scheduler.default_interval", 30)
 	viper.SetDefault("scheduler.default_timeout", 5)
@@ -123,16 +114,16 @@ func setDefaults() {
 	// Log
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.format", "console")
+
+	// Auth
+	viper.SetDefault("auth.jwt_secret", "your-secret-key-change-in-production")
+	viper.SetDefault("auth.jwt_expiry", "168h") // 7天
 }
 
 // processEnvOverrides 处理环境变量覆盖
 func processEnvOverrides() {
 	if v := os.Getenv("DB_PASSWORD"); v != "" {
 		cfg.Database.Password = v
-	}
-	if v := os.Getenv("WECOM_WEBHOOK_URL"); v != "" {
-		cfg.Alerter.WeCom.WebhookURL = v
-		cfg.Alerter.WeCom.Enabled = true
 	}
 }
 

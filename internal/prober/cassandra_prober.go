@@ -135,74 +135,23 @@ func (p *CassandraProber) Probe(ctx context.Context, target Target) (*ProbeResul
 	}
 	defer session.Close()
 
-	metrics := make(map[string]any)
-	var warnings []string
-
-	// 1. 获取集群节点状态
-	iter := session.Query("SELECT peer, data_center, rack, release_version FROM system.peers").Iter()
-	var peer, peerDC, rack, version string
-	nodeCount := 0
-	nodes := []map[string]string{}
-
-	for iter.Scan(&peer, &peerDC, &rack, &version) {
-		nodeCount++
-		nodes = append(nodes, map[string]string{
-			"peer":       peer,
-			"datacenter": peerDC,
-			"rack":       rack,
-			"version":    version,
-		})
-	}
-	if err := iter.Close(); err != nil {
-		warnings = append(warnings, fmt.Sprintf("获取节点信息失败: %v", err))
-	}
-	metrics["peer_nodes"] = nodes
-	metrics["peer_node_count"] = nodeCount
-
-	// 2. 检查本节点信息
-	var localDC, localRack, localVersion string
-	err = session.Query("SELECT data_center, rack, release_version FROM system.local").
-		Scan(&localDC, &localRack, &localVersion)
-	if err == nil {
-		metrics["local_datacenter"] = localDC
-		metrics["local_rack"] = localRack
-		metrics["local_version"] = localVersion
-	}
-
-	// 3. 检查 keyspace 复制因子
-	var replication map[string]string
-	err = session.Query(`
-		SELECT replication FROM system_schema.keyspaces WHERE keyspace_name = ?
-	`, keyspace).Scan(&replication)
-	if err == nil {
-		metrics["keyspace_replication"] = replication
-	}
-
-	// 4. 简单读测试
-	testStart := time.Now()
+	// 简单查询测试连接
 	var testResult int
 	err = session.Query("SELECT COUNT(*) FROM system.local").Scan(&testResult)
-	readLatency := time.Since(testStart)
 	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("读测试失败: %v", err))
-	} else {
-		metrics["read_latency_ms"] = readLatency.Milliseconds()
-	}
-
-	latency := time.Since(start)
-	message := fmt.Sprintf("Cassandra 集群正常，共 %d 个 peer 节点", nodeCount)
-
-	if len(warnings) > 0 {
-		message = fmt.Sprintf("存在告警: %v", warnings)
+		return &ProbeResult{
+			Success:   false,
+			Latency:   time.Since(start),
+			Message:   fmt.Sprintf("查询失败: %v", err),
+			CheckedAt: time.Now(),
+		}, nil
 	}
 
 	return &ProbeResult{
 		Success:   true,
-		Latency:   latency,
-		Message:   message,
-		Metrics:   metrics,
+		Latency:   time.Since(start),
+		Message:   "Cassandra 集群服务可用",
 		CheckedAt: time.Now(),
-		Warnings:  warnings,
 	}, nil
 }
 

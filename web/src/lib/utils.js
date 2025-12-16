@@ -45,6 +45,8 @@ export const serviceTypeLabels = {
   kafka: 'Kafka',
   http: 'HTTP',
   tcp: 'TCP',
+  ping: 'Ping',
+  cpu: 'CPU监控',
   mysql: 'MySQL',
   mongodb: 'MongoDB',
   elasticsearch: 'Elasticsearch'

@@ -68,20 +68,6 @@ func (p *KafkaProber) ConfigSchema() map[string]FieldSchema {
 			Required:     false,
 			DefaultValue: false,
 		},
-		"consumer_groups": {
-			Type:        "string",
-			Label:       "监控消费组",
-			Required:    false,
-			Placeholder: "tb-core,tb-rule-engine",
-			Hint:        "多个消费组用逗号分隔，监控其消费延迟",
-		},
-		"lag_threshold": {
-			Type:         "number",
-			Label:        "消费延迟告警阈值",
-			Required:     false,
-			DefaultValue: 10000,
-			Hint:         "消息积压数量超过此值告警",
-		},
 	}
 }
 
@@ -148,138 +134,23 @@ func (p *KafkaProber) Probe(ctx context.Context, target Target) (*ProbeResult, e
 	}
 	defer admin.Close()
 
-	metrics := make(map[string]any)
-	var warnings []string
-
-	// 1. 获取 Broker 列表
+	// 获取 Broker 列表验证集群可用性
 	brokerList, _, err := admin.DescribeCluster()
 	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("获取集群信息失败: %v", err))
-	} else {
-		brokerInfos := []map[string]any{}
-		for _, broker := range brokerList {
-			brokerInfos = append(brokerInfos, map[string]any{
-				"id":   broker.ID(),
-				"addr": broker.Addr(),
-			})
-		}
-		metrics["brokers"] = brokerInfos
-		metrics["broker_count"] = len(brokerList)
-	}
-
-	// 2. 获取 Topic 列表
-	topics, err := admin.ListTopics()
-	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("获取 Topic 列表失败: %v", err))
-	} else {
-		topicCount := 0
-		topicInfos := []map[string]any{}
-		for name, detail := range topics {
-			topicCount++
-			topicInfos = append(topicInfos, map[string]any{
-				"name":               name,
-				"partitions":         detail.NumPartitions,
-				"replication_factor": detail.ReplicationFactor,
-			})
-		}
-		metrics["topic_count"] = topicCount
-		// 只返回前20个topic避免数据过多
-		if len(topicInfos) > 20 {
-			topicInfos = topicInfos[:20]
-		}
-		metrics["topics"] = topicInfos
-	}
-
-	// 3. 检查消费组延迟
-	consumerGroups := getStringSliceConfig(target.Config, "consumer_groups")
-	if len(consumerGroups) > 0 {
-		lagThreshold := int64(getIntConfig(target.Config, "lag_threshold", 10000))
-
-		groupLags := make(map[string]int64)
-		for _, group := range consumerGroups {
-			offsets, err := admin.ListConsumerGroupOffsets(group, nil)
-			if err != nil {
-				continue
-			}
-
-			totalLag := int64(0)
-			for topicName, partitions := range offsets.Blocks {
-				for partition := range partitions {
-					// 获取最新 offset
-					newestOffset, err := getNewestOffset(brokers, config, topicName, partition)
-					if err != nil {
-						continue
-					}
-
-					consumerOffset := offsets.Blocks[topicName][partition].Offset
-					if consumerOffset >= 0 && newestOffset > consumerOffset {
-						totalLag += newestOffset - consumerOffset
-					}
-				}
-			}
-
-			groupLags[group] = totalLag
-			if totalLag > lagThreshold {
-				warnings = append(warnings, fmt.Sprintf("消费组 %s 延迟 %d 超过阈值", group, totalLag))
-			}
-		}
-		metrics["consumer_group_lags"] = groupLags
-	}
-
-	// 4. 检查 under-replicated partitions
-	if topics != nil {
-		topicNames := make([]string, 0, len(topics))
-		for name := range topics {
-			topicNames = append(topicNames, name)
-		}
-
-		describeTopics, err := admin.DescribeTopics(topicNames)
-		if err == nil {
-			underReplicated := 0
-			for _, topic := range describeTopics {
-				for _, partition := range topic.Partitions {
-					if len(partition.Isr) < len(partition.Replicas) {
-						underReplicated++
-					}
-				}
-			}
-			metrics["under_replicated_partitions"] = underReplicated
-			if underReplicated > 0 {
-				warnings = append(warnings, fmt.Sprintf("存在 %d 个 under-replicated 分区", underReplicated))
-			}
-		}
-	}
-
-	latency := time.Since(start)
-	brokerCount := 0
-	if bc, ok := metrics["broker_count"].(int); ok {
-		brokerCount = bc
-	}
-	message := fmt.Sprintf("Kafka 集群正常，%d 个 Broker 在线", brokerCount)
-
-	if len(warnings) > 0 {
-		message = fmt.Sprintf("存在告警: %v", warnings)
+		return &ProbeResult{
+			Success:   false,
+			Latency:   time.Since(start),
+			Message:   fmt.Sprintf("获取集群信息失败: %v", err),
+			CheckedAt: time.Now(),
+		}, nil
 	}
 
 	return &ProbeResult{
 		Success:   true,
-		Latency:   latency,
-		Message:   message,
-		Metrics:   metrics,
+		Latency:   time.Since(start),
+		Message:   fmt.Sprintf("Kafka 集群服务可用，%d 个 Broker 在线", len(brokerList)),
 		CheckedAt: time.Now(),
-		Warnings:  warnings,
 	}, nil
-}
-
-// getNewestOffset 获取分区最新 offset
-func getNewestOffset(brokers []string, config *sarama.Config, topic string, partition int32) (int64, error) {
-	client, err := sarama.NewClient(brokers, config)
-	if err != nil {
-		return 0, err
-	}
-	defer client.Close()
-
-	return client.GetOffset(topic, partition, sarama.OffsetNewest)
 }
 
 // Validate 验证目标配置

@@ -15,17 +15,16 @@ database:
   max_open_conns: 20
   max_idle_conns: 10
 
-alerter:
-  wecom:
-    enabled: true
-    webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=bb594301-d7b5-4c5b-b2bc-402d33e56e07"  # 可通过环境变量 WECOM_WEBHOOK_URL 覆盖
-
 scheduler:
-  default_interval: 10        # 默认探测间隔（秒）
-  default_timeout: 3          # 默认超时时间（秒）
+  default_interval: 30        # 默认探测间隔（秒）
+  default_timeout: 5          # 默认超时时间（秒）
   alert_threshold: 3          # 告警阈值（连续失败次数）
-  result_retention_days: 10   # 探测结果保留天数
+  result_retention_days: 30   # 探测结果保留天数
 
 log:
   level: info     # debug/info/warn/error
   format: console # console/json
+
+auth:
+  jwt_secret: "your-secret-key-change-in-production"  # JWT密钥，生产环境请修改
+  jwt_expiry: 168h  # JWT过期时间，默认7天 (168h = 7*24h)

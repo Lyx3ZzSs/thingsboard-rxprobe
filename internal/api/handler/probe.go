@@ -118,6 +118,7 @@ func (h *ProbeHandler) ListTargets(c *gin.Context) {
 	query.Keyword = c.Query("keyword")
 	query.Type = c.Query("type")
 	query.Status = c.Query("status")
+	query.Group = c.Query("group")
 	query.Page, _ = strconv.Atoi(c.DefaultQuery("page", "1"))
 	query.Size, _ = strconv.Atoi(c.DefaultQuery("size", "10"))
 

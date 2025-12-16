@@ -3,8 +3,6 @@ package prober
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -85,12 +83,6 @@ func (p *RedisProber) ConfigSchema() map[string]FieldSchema {
 			Required:     false,
 			DefaultValue: 0,
 		},
-		"memory_threshold_percent": {
-			Type:         "number",
-			Label:        "内存使用告警阈值(%)",
-			Required:     false,
-			DefaultValue: 80,
-		},
 	}
 }
 
@@ -141,7 +133,7 @@ func (p *RedisProber) Probe(ctx context.Context, target Target) (*ProbeResult, e
 	}
 	defer rdb.Close()
 
-	// 1. PING 测试
+	// PING 测试
 	_, err := rdb.Ping(ctx).Result()
 	if err != nil {
 		return &ProbeResult{
@@ -152,107 +144,12 @@ func (p *RedisProber) Probe(ctx context.Context, target Target) (*ProbeResult, e
 		}, nil
 	}
 
-	metrics := make(map[string]any)
-	var warnings []string
-
-	// 2. 获取 INFO 信息
-	info, err := rdb.Info(ctx, "server", "memory", "clients", "stats", "replication").Result()
-	if err == nil {
-		infoMap := parseRedisInfo(info)
-
-		// 服务器信息
-		metrics["redis_version"] = infoMap["redis_version"]
-		metrics["uptime_in_days"] = infoMap["uptime_in_days"]
-		metrics["redis_mode"] = infoMap["redis_mode"]
-
-		// 内存信息
-		if usedMemory, ok := infoMap["used_memory"]; ok {
-			usedMem, _ := strconv.ParseInt(usedMemory, 10, 64)
-			metrics["used_memory_bytes"] = usedMem
-			metrics["used_memory_human"] = infoMap["used_memory_human"]
-		}
-		if maxMemory, ok := infoMap["maxmemory"]; ok {
-			maxMem, _ := strconv.ParseInt(maxMemory, 10, 64)
-			metrics["max_memory_bytes"] = maxMem
-			if maxMem > 0 {
-				usedMem, _ := strconv.ParseInt(infoMap["used_memory"], 10, 64)
-				usagePercent := float64(usedMem) / float64(maxMem) * 100
-				metrics["memory_usage_percent"] = usagePercent
-
-				threshold := getFloatConfig(target.Config, "memory_threshold_percent", 80)
-				if usagePercent > threshold {
-					warnings = append(warnings, fmt.Sprintf("内存使用率 %.1f%% 超过阈值 %.0f%%", usagePercent, threshold))
-				}
-			}
-		}
-
-		// 客户端连接数
-		if connectedClients, ok := infoMap["connected_clients"]; ok {
-			clients, _ := strconv.Atoi(connectedClients)
-			metrics["connected_clients"] = clients
-		}
-
-		// 复制状态
-		metrics["role"] = infoMap["role"]
-		if infoMap["role"] == "slave" {
-			metrics["master_host"] = infoMap["master_host"]
-			metrics["master_port"] = infoMap["master_port"]
-			metrics["master_link_status"] = infoMap["master_link_status"]
-
-			if infoMap["master_link_status"] != "up" {
-				warnings = append(warnings, "主从复制链接断开")
-			}
-		}
-	}
-
-	// 3. 集群模式额外检查
-	if mode == "cluster" {
-		if clusterClient, ok := rdb.(*redis.ClusterClient); ok {
-			clusterInfo, err := clusterClient.ClusterInfo(ctx).Result()
-			if err == nil {
-				clusterMap := parseRedisInfo(clusterInfo)
-				metrics["cluster_state"] = clusterMap["cluster_state"]
-				metrics["cluster_slots_ok"] = clusterMap["cluster_slots_ok"]
-				metrics["cluster_known_nodes"] = clusterMap["cluster_known_nodes"]
-
-				if clusterMap["cluster_state"] != "ok" {
-					warnings = append(warnings, fmt.Sprintf("集群状态异常: %s", clusterMap["cluster_state"]))
-				}
-			}
-		}
-	}
-
-	latency := time.Since(start)
-	message := fmt.Sprintf("Redis (%s模式) 运行正常", mode)
-
-	if len(warnings) > 0 {
-		message = fmt.Sprintf("存在告警: %v", warnings)
-	}
-
 	return &ProbeResult{
 		Success:   true,
-		Latency:   latency,
-		Message:   message,
-		Metrics:   metrics,
+		Latency:   time.Since(start),
+		Message:   fmt.Sprintf("Redis (%s模式) 服务可用", mode),
 		CheckedAt: time.Now(),
-		Warnings:  warnings,
 	}, nil
-}
-
-// parseRedisInfo 解析 Redis INFO 命令输出
-func parseRedisInfo(info string) map[string]string {
-	result := make(map[string]string)
-	lines := strings.Split(info, "\r\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "#") || line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) == 2 {
-			result[parts[0]] = parts[1]
-		}
-	}
-	return result
 }
 
 // Validate 验证目标配置

@@ -10,7 +10,10 @@ import {
   Activity,
   Zap,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Cpu,
+  HardDrive,
+  Gauge
 } from 'lucide-vue-next'
 
 import { Button } from '@/components/ui/button'
@@ -29,6 +32,7 @@ import {
 } from '@/components/ui/table'
 import ServiceForm from '@/components/ServiceForm.vue'
 import { getTarget, getTargetResults, deleteTarget, getProbeTypes } from '@/api/probe'
+import { getNotifiers } from '@/api/notifier'
 import { formatTime, getServiceTypeLabel, formatDuration } from '@/lib/utils'
 
 const route = useRoute()
@@ -38,6 +42,7 @@ const loading = ref(false)
 const service = ref(null)
 const results = ref([])
 const probeTypes = ref([])
+const notifiers = ref([])
 const formVisible = ref(false)
 const deleteDialogVisible = ref(false)
 let refreshTimer = null
@@ -68,19 +73,62 @@ const stats = computed(() => {
   }
 })
 
+// CPU 监控专用统计
+const cpuStats = computed(() => {
+  if (!results.value.length || service.value?.type !== 'cpu') {
+    return {
+      avgCpu: 0,
+      maxCpu: 0,
+      minCpu: 0,
+      currentCpu: 0,
+      cpuCores: 0,
+      threshold: 0
+    }
+  }
+  
+  const cpuValues = results.value
+    .filter(r => r.metrics && r.metrics.cpu_percent)
+    .map(r => parseFloat(r.metrics.cpu_percent))
+  
+  const latestResult = results.value[0]
+  
+  return {
+    avgCpu: cpuValues.length ? (cpuValues.reduce((a, b) => a + b, 0) / cpuValues.length).toFixed(2) : 0,
+    maxCpu: cpuValues.length ? Math.max(...cpuValues).toFixed(2) : 0,
+    minCpu: cpuValues.length ? Math.min(...cpuValues).toFixed(2) : 0,
+    currentCpu: latestResult?.metrics?.cpu_percent || 0,
+    cpuCores: latestResult?.metrics?.cpu_cores || 0,
+    threshold: latestResult?.metrics?.threshold || 0
+  }
+})
+
+// 是否为 CPU 监控
+const isCpuMonitor = computed(() => service.value?.type === 'cpu')
+
+// 获取服务绑定的通知渠道
+const serviceNotifiers = computed(() => {
+  if (!service.value || !service.value.notify_channel_ids || !notifiers.value.length) {
+    return []
+  }
+  const ids = service.value.notify_channel_ids || []
+  return notifiers.value.filter(n => ids.includes(n.id))
+})
+
 // 加载服务详情
 async function loadService() {
   loading.value = true
   try {
-    const [serviceRes, resultsRes, typesRes] = await Promise.all([
+    const [serviceRes, resultsRes, typesRes, notifiersRes] = await Promise.all([
       getTarget(route.params.id),
       getTargetResults(route.params.id, { page: 1, size: 100 }),
-      getProbeTypes()
+      getProbeTypes(),
+      getNotifiers()
     ])
     
     service.value = serviceRes.data
     results.value = resultsRes.data?.items || []
     probeTypes.value = typesRes.data
+    notifiers.value = notifiersRes.data || []
     
     // 处理图表数据
     updateChartData()
@@ -142,11 +190,23 @@ function updateChartData() {
   
   // 取最近 24 个点
   const recent = results.value.slice(0, 24).reverse()
-  recent.forEach(r => {
-    const time = new Date(r.checked_at)
-    labels.push(`${time.getHours()}:${String(time.getMinutes()).padStart(2, '0')}`)
-    data.push(r.latency_ms)
-  })
+  
+  if (isCpuMonitor.value) {
+    // CPU 监控：提取 CPU 占用率数据
+    recent.forEach(r => {
+      const time = new Date(r.checked_at)
+      labels.push(`${time.getHours()}:${String(time.getMinutes()).padStart(2, '0')}`)
+      const cpuPercent = r.metrics?.cpu_percent ? parseFloat(r.metrics.cpu_percent) : 0
+      data.push(cpuPercent)
+    })
+  } else {
+    // 其他监控：提取延迟数据
+    recent.forEach(r => {
+      const time = new Date(r.checked_at)
+      labels.push(`${time.getHours()}:${String(time.getMinutes()).padStart(2, '0')}`)
+      data.push(r.latency_ms)
+    })
+  }
   
   chartLabels.value = labels
   latencyData.value = data
@@ -223,15 +283,33 @@ onUnmounted(() => {
               <div class="flex items-center gap-3 mt-2">
                 <Badge variant="secondary">{{ getServiceTypeLabel(service.type) }}</Badge>
                 <StatusBadge :status="service.status" />
+                <Badge v-if="service.group" variant="outline">{{ service.group }}</Badge>
                 <span class="text-sm text-muted-foreground">
                   间隔: {{ service.interval_seconds }}s
                 </span>
+              </div>
+              <div v-if="serviceNotifiers.length > 0" class="flex items-center gap-2 mt-2">
+                <span class="text-xs text-muted-foreground">通知渠道:</span>
+                <div class="flex flex-wrap gap-1">
+                  <Badge 
+                    v-for="notifier in serviceNotifiers" 
+                    :key="notifier.id" 
+                    variant="outline" 
+                    class="text-xs"
+                  >
+                    {{ notifier.name }}
+                  </Badge>
+                </div>
               </div>
             </div>
           </div>
           
           <div class="text-right">
-            <p class="text-3xl font-bold font-mono">
+            <p v-if="isCpuMonitor" class="text-3xl font-bold font-mono">
+              {{ cpuStats.currentCpu }}
+              <span class="text-lg text-muted-foreground">%</span>
+            </p>
+            <p v-else class="text-3xl font-bold font-mono">
               {{ service.last_latency_ms || '-' }}
               <span class="text-lg text-muted-foreground">ms</span>
             </p>
@@ -243,8 +321,36 @@ onUnmounted(() => {
       </CardContent>
     </Card>
 
-    <!-- 统计卡片 -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <!-- 统计卡片 - CPU 监控 -->
+    <div v-if="isCpuMonitor" class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <HealthCard
+        title="当前 CPU 占用率"
+        :value="`${cpuStats.currentCpu}%`"
+        :icon="Cpu"
+        :variant="parseFloat(cpuStats.currentCpu) > cpuStats.threshold ? 'destructive' : 'success'"
+      />
+      <HealthCard
+        title="平均 CPU (24h)"
+        :value="`${cpuStats.avgCpu}%`"
+        :icon="Activity"
+        variant="primary"
+      />
+      <HealthCard
+        title="峰值 CPU (24h)"
+        :value="`${cpuStats.maxCpu}%`"
+        :icon="AlertTriangle"
+        :variant="parseFloat(cpuStats.maxCpu) > cpuStats.threshold ? 'warning' : 'primary'"
+      />
+      <HealthCard
+        title="CPU 核心数"
+        :value="`${cpuStats.cpuCores}`"
+        :icon="HardDrive"
+        variant="secondary"
+      />
+    </div>
+    
+    <!-- 统计卡片 - 其他监控类型 -->
+    <div v-else class="grid grid-cols-2 lg:grid-cols-4 gap-4">
       <HealthCard
         title="成功率 (24h)"
         :value="`${stats.successRate}%`"
@@ -263,32 +369,80 @@ onUnmounted(() => {
         :icon="AlertTriangle"
         variant="warning"
       />
+      <HealthCard
+        title="最小响应"
+        :value="`${stats.minLatency}ms`"
+        :icon="CheckCircle2"
+        variant="success"
+      />
     </div>
 
-    <!-- 响应时间图表 -->
+    <!-- CPU 阈值信息卡片 -->
+    <Card v-if="isCpuMonitor && cpuStats.threshold > 0" class="bg-primary/5 border-primary/20">
+      <CardContent class="p-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
+              <Gauge class="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <p class="text-sm font-medium text-foreground">告警阈值设置</p>
+              <p class="text-xs text-muted-foreground mt-0.5">当 CPU 占用率超过 {{ cpuStats.threshold }}% 时触发告警</p>
+            </div>
+          </div>
+          <div class="text-right">
+            <p class="text-2xl font-bold text-primary">{{ cpuStats.threshold }}%</p>
+            <p class="text-xs text-muted-foreground">阈值</p>
+          </div>
+        </div>
+        
+        <!-- 进度条显示当前 CPU 相对阈值的位置 -->
+        <div class="mt-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs text-muted-foreground">当前占用率</span>
+            <span class="text-xs font-medium">{{ cpuStats.currentCpu }}% / {{ cpuStats.threshold }}%</span>
+          </div>
+          <Progress 
+            :value="(parseFloat(cpuStats.currentCpu) / cpuStats.threshold) * 100" 
+            :class="parseFloat(cpuStats.currentCpu) > cpuStats.threshold ? 'bg-destructive/20' : 'bg-success/20'"
+          />
+        </div>
+      </CardContent>
+    </Card>
+
+    <!-- 趋势图表 -->
     <MetricChart
-      title="响应时间趋势"
+      :title="isCpuMonitor ? 'CPU 占用率趋势' : '响应时间趋势'"
       :labels="chartLabels"
       :data="latencyData"
+      :unit="isCpuMonitor ? '%' : 'ms'"
       color="#8b5cf6"
-      unit="ms"
       :height="250"
     />
 
     <!-- 配置信息 -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- 连接配置 -->
+      <!-- 配置详情 -->
       <Card>
         <CardHeader>
-          <CardTitle class="text-base">连接配置</CardTitle>
+          <CardTitle class="text-base">
+            {{ isCpuMonitor ? '监控配置' : '连接配置' }}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <dl class="space-y-3">
             <template v-for="(value, key) in service?.config" :key="key">
               <div class="flex justify-between py-2 border-b border-border/50 last:border-0">
-                <dt class="text-muted-foreground">{{ key }}</dt>
+                <dt class="text-muted-foreground capitalize">
+                  {{ key === 'threshold' ? 'CPU告警阈值' : 
+                     key === 'sample_duration' ? '采样时长' :
+                     key }}
+                </dt>
                 <dd class="font-mono text-sm">
-                  {{ key.includes('password') ? '••••••••' : value }}
+                  {{ key.includes('password') ? '••••••••' : 
+                     key === 'threshold' ? value + '%' :
+                     key === 'sample_duration' ? value + '秒' :
+                     value }}
                 </dd>
               </div>
             </template>
@@ -306,7 +460,9 @@ onUnmounted(() => {
             <TableHeader>
               <TableRow>
                 <TableHead class="w-[80px]">状态</TableHead>
-                <TableHead class="w-[80px]">延迟</TableHead>
+                <TableHead class="w-[80px]">
+                  {{ isCpuMonitor ? 'CPU' : '延迟' }}
+                </TableHead>
                 <TableHead>时间</TableHead>
               </TableRow>
             </TableHeader>
@@ -316,7 +472,8 @@ onUnmounted(() => {
                   <StatusBadge :status="result.success ? 'healthy' : 'unhealthy'" size="sm" :show-label="false" />
                 </TableCell>
                 <TableCell class="font-mono text-sm">
-                  {{ result.latency_ms }}ms
+                  <span v-if="isCpuMonitor">{{ result.metrics?.cpu_percent || '0' }}%</span>
+                  <span v-else>{{ result.latency_ms }}ms</span>
                 </TableCell>
                 <TableCell class="text-muted-foreground text-sm">
                   {{ formatTime(result.checked_at) }}

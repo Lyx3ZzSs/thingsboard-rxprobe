@@ -10,7 +10,8 @@ import {
   Radio, 
   Globe, 
   Network,
-  Activity
+  Activity,
+  Cpu
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -29,6 +30,8 @@ const typeIcons = {
   kafka: Radio,
   http: Globe,
   tcp: Network,
+  ping: Network,
+  cpu: Cpu,
   mysql: Database,
   mongodb: Database,
   elasticsearch: Server

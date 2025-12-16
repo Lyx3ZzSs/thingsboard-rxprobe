@@ -48,6 +48,7 @@ type ListQuery struct {
 	Keyword string
 	Type    string
 	Status  string
+	Group   string
 	Enabled *bool
 	Page    int
 	Size    int
@@ -68,6 +69,9 @@ func (r *TargetRepository) List(ctx context.Context, query ListQuery) ([]*model.
 	}
 	if query.Status != "" {
 		db = db.Where("status = ?", query.Status)
+	}
+	if query.Group != "" {
+		db = db.Where("\"group\" = ?", query.Group)
 	}
 	if query.Enabled != nil {
 		db = db.Where("enabled = ?", *query.Enabled)

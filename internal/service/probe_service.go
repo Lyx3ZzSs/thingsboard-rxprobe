@@ -42,7 +42,7 @@ func NewProbeService(
 
 // CreateTarget 创建探测目标
 func (s *ProbeService) CreateTarget(ctx context.Context, req *model.CreateTargetRequest) (*model.ProbeTarget, error) {
-	// 验证探针类型
+	// 验证探针类型是否为工厂中已注册的探针类型
 	p, ok := s.factory.Get(req.Type)
 	if !ok {
 		return nil, fmt.Errorf("不支持的探针类型: %s", req.Type)
@@ -79,15 +79,27 @@ func (s *ProbeService) CreateTarget(ctx context.Context, req *model.CreateTarget
 		initialMessage = "监控已禁用"
 	}
 
+	// 序列化通知渠道ID列表
+	notifyChannelIDsJSON := []byte("[]")
+	if len(req.NotifyChannelIDs) > 0 {
+		var err error
+		notifyChannelIDsJSON, err = json.Marshal(req.NotifyChannelIDs)
+		if err != nil {
+			return nil, fmt.Errorf("序列化通知渠道ID失败: %w", err)
+		}
+	}
+
 	probeTarget := &model.ProbeTarget{
-		Name:            req.Name,
-		Type:            req.Type,
-		Config:          configJSON,
-		TimeoutSeconds:  req.TimeoutSeconds,
-		IntervalSeconds: req.IntervalSeconds,
-		Enabled:         req.Enabled,
-		Status:          initialStatus,
-		LastMessage:     initialMessage,
+		Name:             req.Name,
+		Type:             req.Type,
+		Config:           configJSON,
+		TimeoutSeconds:   req.TimeoutSeconds,
+		IntervalSeconds:  req.IntervalSeconds,
+		Enabled:          req.Enabled,
+		Status:           initialStatus,
+		LastMessage:      initialMessage,
+		Group:            req.Group,
+		NotifyChannelIDs: notifyChannelIDsJSON,
 	}
 
 	if err := s.targetRepo.Create(ctx, probeTarget); err != nil {
@@ -156,6 +168,16 @@ func (s *ProbeService) UpdateTarget(ctx context.Context, id uint64, req *model.U
 			target.LastLatencyMs = 0
 		}
 		// 如果原本就是启用状态，保持现有的健康状态不变
+	}
+	if req.Group != nil {
+		target.Group = *req.Group
+	}
+	if req.NotifyChannelIDs != nil {
+		notifyChannelIDsJSON, err := json.Marshal(*req.NotifyChannelIDs)
+		if err != nil {
+			return nil, fmt.Errorf("序列化通知渠道ID失败: %w", err)
+		}
+		target.NotifyChannelIDs = notifyChannelIDsJSON
 	}
 
 	if err := s.targetRepo.Update(ctx, target); err != nil {
@@ -273,6 +295,8 @@ func (s *ProbeService) GetProbeTypes() []map[string]string {
 		{"value": "kafka", "label": "Kafka", "icon": "message"},
 		{"value": "http", "label": "HTTP", "icon": "globe"},
 		{"value": "tcp", "label": "TCP", "icon": "network"},
+		{"value": "ping", "label": "Ping", "icon": "network"},
+		{"value": "cpu", "label": "CPU", "icon": "cpu"},
 	}
 	return types
 }

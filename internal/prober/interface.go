@@ -79,6 +79,8 @@ func NewFactory() *Factory {
 	f.Register(NewKafkaProber())
 	f.Register(NewHTTPProber())
 	f.Register(NewTCPProber())
+	f.Register(NewPingProber())
+	f.Register(NewCPUProber())
 	return f
 }
 

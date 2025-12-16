@@ -21,7 +21,7 @@ const props = defineProps({
   variant: {
     type: String,
     default: 'default',
-    validator: (v) => ['default', 'primary', 'success', 'warning', 'destructive'].includes(v)
+    validator: (v) => ['default', 'primary', 'success', 'warning', 'destructive', 'secondary'].includes(v)
   },
   class: String
 })
@@ -51,10 +51,15 @@ const variantStyles = {
     icon: 'bg-destructive/15 text-destructive',
     border: 'border-destructive/30',
     glow: 'glow-destructive'
+  },
+  secondary: {
+    icon: 'bg-secondary/15 text-secondary-foreground',
+    border: 'border-secondary/30',
+    glow: ''
   }
 }
 
-const styles = computed(() => variantStyles[props.variant])
+const styles = computed(() => variantStyles[props.variant] || variantStyles.default)
 
 const trendColors = {
   up: 'text-success',

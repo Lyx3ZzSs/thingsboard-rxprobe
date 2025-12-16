@@ -51,7 +51,8 @@ const deletingService = ref(null)
 const filters = reactive({
   keyword: '',
   type: '',
-  status: ''
+  status: '',
+  group: ''
 })
 
 // 分页
@@ -73,6 +74,15 @@ const typeOptions = computed(() => [
   { value: '', label: '全部类型' },
   ...probeTypes.value.map(t => ({ value: t.value, label: t.label }))
 ])
+
+// 分组选项
+const groupOptions = computed(() => {
+  const groups = [...new Set(services.value.map(s => s.group).filter(Boolean))]
+  return [
+    { value: '', label: '全部分组' },
+    ...groups.map(g => ({ value: g, label: g }))
+  ]
+})
 
 // 加载探针类型
 async function loadProbeTypes() {
@@ -211,6 +221,14 @@ onMounted(() => {
             @update:modelValue="loadServices"
           />
           
+          <Select
+            v-model="filters.group"
+            :options="groupOptions"
+            placeholder="分组"
+            class="w-40"
+            @update:modelValue="loadServices"
+          />
+          
           <div class="flex items-center gap-2 ml-auto">
             <Button variant="outline" size="icon" @click="loadServices" :disabled="loading">
               <RefreshCw :class="['w-4 h-4', loading && 'animate-spin']" />
@@ -257,6 +275,7 @@ onMounted(() => {
             <TableHead class="w-[80px]">状态</TableHead>
             <TableHead>名称</TableHead>
             <TableHead class="w-[120px]">类型</TableHead>
+            <TableHead class="w-[100px]">分组</TableHead>
             <TableHead class="w-[100px]">响应时间</TableHead>
             <TableHead class="w-[100px]">成功率</TableHead>
             <TableHead class="w-[100px]">探测间隔</TableHead>
@@ -273,6 +292,10 @@ onMounted(() => {
             <TableCell class="font-medium">{{ service.name }}</TableCell>
             <TableCell>
               <Badge variant="secondary">{{ getServiceTypeLabel(service.type) }}</Badge>
+            </TableCell>
+            <TableCell>
+              <Badge v-if="service.group" variant="outline">{{ service.group }}</Badge>
+              <span v-else class="text-muted-foreground text-xs">-</span>
             </TableCell>
             <TableCell class="font-mono">
               <span :class="{

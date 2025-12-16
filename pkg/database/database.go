@@ -78,9 +78,11 @@ func Init(cfg Config) error {
 // autoMigrate 自动迁移数据库
 func autoMigrate() error {
 	return db.AutoMigrate(
+		&model.User{},
 		&model.ProbeTarget{},
 		&model.ProbeResult{},
 		&model.AlertRecord{},
+		&model.NotifyChannel{},
 	)
 }
 
