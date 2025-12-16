@@ -33,7 +33,7 @@ import {
 import ServiceForm from '@/components/ServiceForm.vue'
 import { getTarget, getTargetResults, deleteTarget, getProbeTypes } from '@/api/probe'
 import { getNotifiers } from '@/api/notifier'
-import { formatTime, getServiceTypeLabel, formatDuration } from '@/lib/utils'
+import { formatTime, getServiceTypeLabel, formatDuration, formatLatency } from '@/lib/utils'
 
 const route = useRoute()
 const router = useRouter()
@@ -473,7 +473,7 @@ onUnmounted(() => {
                 </TableCell>
                 <TableCell class="font-mono text-sm">
                   <span v-if="isCpuMonitor">{{ result.metrics?.cpu_percent || '0' }}%</span>
-                  <span v-else>{{ result.latency_ms }}ms</span>
+                  <span v-else>{{ formatLatency(result.latency_ms) }}</span>
                 </TableCell>
                 <TableCell class="text-muted-foreground text-sm">
                   {{ formatTime(result.checked_at) }}

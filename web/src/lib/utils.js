@@ -25,6 +25,13 @@ export function formatDuration(ms) {
   return `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000) / 60000)}m`
 }
 
+export function formatLatency(ms) {
+  if (!ms || ms < 0) return '-'
+  if (ms < 1000) return `${ms}ms`
+  // 对于大于等于 1 秒的延迟，显示为秒，保留两位小数
+  return `${(ms / 1000).toFixed(2)}s`
+}
+
 export function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 B'
   const k = 1024

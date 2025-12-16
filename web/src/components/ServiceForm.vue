@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch'
 import { Card, CardContent } from '@/components/ui/card'
 import { createTarget, updateTarget, testProbe, getTargets } from '@/api/probe'
 import { getNotifiers } from '@/api/notifier'
+import { formatLatency } from '@/lib/utils'
 import { 
   Database, 
   Server, 
@@ -269,6 +270,11 @@ const shouldShowProbeParams = computed(() => {
   return !['cpu'].includes(form.type)
 })
 
+// Ping 类型不需要手动配置超时时间（固定为15秒，因为后台固定ping 4次，每次3秒）
+const shouldShowTimeout = computed(() => {
+  return !['cpu', 'ping'].includes(form.type)
+})
+
 // 组件挂载时加载数据
 onMounted(() => {
   loadNotifiers()
@@ -400,7 +406,7 @@ onMounted(() => {
           <label class="text-sm font-medium mb-2 block">探测间隔 (秒)</label>
           <Input v-model.number="form.interval_seconds" type="number" min="5" />
         </div>
-        <div>
+        <div v-if="shouldShowTimeout">
           <label class="text-sm font-medium mb-2 block">超时时间 (秒)</label>
           <Input v-model.number="form.timeout_seconds" type="number" min="1" />
         </div>
@@ -411,6 +417,14 @@ onMounted(() => {
         <p class="text-sm text-foreground">
           <span class="font-medium">💡 提示：</span>
           CPU 监控会实时采样当前服务器的 CPU 占用率。采样时长即为检测耗时，无需额外设置探测间隔。
+        </p>
+      </div>
+      
+      <!-- Ping 监控的特殊说明 -->
+      <div v-if="form.type === 'ping'" class="p-3 rounded-lg bg-primary/10 border border-primary/20">
+        <p class="text-sm text-foreground">
+          <span class="font-medium">💡 提示：</span>
+          Ping 探测固定发送 4 个数据包，每个数据包超时时间为 3 秒，总超时时间固定为 15 秒，无需手动设置。
         </p>
       </div>
       
@@ -430,7 +444,7 @@ onMounted(() => {
         <CheckCircle2 v-if="testResult.success" class="w-4 h-4" />
         <XCircle v-else class="w-4 h-4" />
         <span>{{ testResult.message }}</span>
-        <span v-if="testResult.latency" class="ml-auto font-mono">{{ testResult.latency }}ms</span>
+        <span v-if="testResult.latency" class="ml-auto font-mono">{{ formatLatency(testResult.latency) }}</span>
       </div>
       
       <!-- 操作按钮 -->
