@@ -18,7 +18,6 @@ database:
 scheduler:
   default_interval: 30        # 默认探测间隔（秒）
   default_timeout: 5          # 默认超时时间（秒）
-  alert_threshold: 3          # 告警阈值（连续失败次数）
   result_retention_days: 30   # 探测结果保留天数
 
 log:

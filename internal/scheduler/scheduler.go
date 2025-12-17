@@ -21,16 +21,15 @@ type AlertChecker interface {
 
 // Scheduler 调度器
 type Scheduler struct {
-	cron           *cron.Cron
-	tasks          sync.Map // map[uint64]*ProbeTask
-	proberFactory  *prober.Factory
-	alertChecker   AlertChecker
-	resultChan     chan *ProbeResultEvent
-	alertChan      chan *AlertEvent
-	stopChan       chan struct{}
-	mu             sync.RWMutex
-	running        bool
-	alertThreshold int // 告警阈值（连续失败次数）
+	cron          *cron.Cron
+	tasks         sync.Map // map[uint64]*ProbeTask
+	proberFactory *prober.Factory
+	alertChecker  AlertChecker
+	resultChan    chan *ProbeResultEvent
+	alertChan     chan *AlertEvent
+	stopChan      chan struct{}
+	mu            sync.RWMutex
+	running       bool
 }
 
 // ProbeTask 探测任务
@@ -59,18 +58,14 @@ type AlertEvent struct {
 }
 
 // NewScheduler 创建调度器
-func NewScheduler(factory *prober.Factory, alertThreshold int, alertChecker AlertChecker) *Scheduler {
-	if alertThreshold <= 0 {
-		alertThreshold = 3 // 默认值
-	}
+func NewScheduler(factory *prober.Factory, alertChecker AlertChecker) *Scheduler {
 	return &Scheduler{
-		cron:           cron.New(cron.WithSeconds()),
-		proberFactory:  factory,
-		alertChecker:   alertChecker,
-		resultChan:     make(chan *ProbeResultEvent, 1000),
-		alertChan:      make(chan *AlertEvent, 100),
-		stopChan:       make(chan struct{}),
-		alertThreshold: alertThreshold,
+		cron:          cron.New(cron.WithSeconds()),
+		proberFactory: factory,
+		alertChecker:  alertChecker,
+		resultChan:    make(chan *ProbeResultEvent, 1000),
+		alertChan:     make(chan *AlertEvent, 100),
+		stopChan:      make(chan struct{}),
 	}
 }
 
@@ -143,7 +138,8 @@ func (s *Scheduler) AddTask(target *model.ProbeTarget) error {
 	}
 
 	if shouldInitFailCount {
-		task.FailCount = s.alertThreshold
+		// 固定策略：只要存在“未恢复告警/异常状态”，FailCount>0 便能在下一次成功时触发恢复逻辑
+		task.FailCount = 1
 		logger.Info("初始化失败计数（存在未恢复告警或状态异常）",
 			zap.Uint64("target_id", target.ID),
 			zap.String("status", target.Status),
@@ -256,21 +252,20 @@ func (s *Scheduler) handleResult(event *ProbeResultEvent) {
 
 	if !event.Result.Success {
 		task.FailCount++
-		// 连续失败达到阈值时触发告警
-		if task.FailCount == s.alertThreshold {
-			select {
-			case s.alertChan <- &AlertEvent{
-				Target:    task.Target,
-				Result:    event.Result,
-				Status:    model.AlertStatusFiring,
-				FailCount: task.FailCount,
-			}:
-			default:
-				logger.Warn("告警通道已满", zap.Uint64("target_id", event.TargetID))
-			}
+		// 固定策略：每次失败都触发 firing
+		select {
+		case s.alertChan <- &AlertEvent{
+			Target:    task.Target,
+			Result:    event.Result,
+			Status:    model.AlertStatusFiring,
+			FailCount: task.FailCount,
+		}:
+		default:
+			logger.Warn("告警通道已满", zap.Uint64("target_id", event.TargetID))
 		}
 	} else {
-		if task.FailCount >= s.alertThreshold {
+		// 固定策略：只要出现过失败（FailCount>0），成功就触发一次恢复，关闭未恢复告警记录
+		if task.FailCount > 0 {
 			// 恢复通知
 			select {
 			case s.alertChan <- &AlertEvent{

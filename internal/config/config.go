@@ -40,7 +40,6 @@ type DatabaseConfig struct {
 type SchedulerConfig struct {
 	DefaultInterval     int `mapstructure:"default_interval"`      // 默认探测间隔（秒）
 	DefaultTimeout      int `mapstructure:"default_timeout"`       // 默认超时时间（秒）
-	AlertThreshold      int `mapstructure:"alert_threshold"`       // 告警阈值（连续失败次数）
 	ResultRetentionDays int `mapstructure:"result_retention_days"` // 探测结果保留天数
 }
 
@@ -108,7 +107,6 @@ func setDefaults() {
 	// Scheduler
 	viper.SetDefault("scheduler.default_interval", 30)
 	viper.SetDefault("scheduler.default_timeout", 5)
-	viper.SetDefault("scheduler.alert_threshold", 3)
 	viper.SetDefault("scheduler.result_retention_days", 30)
 
 	// Log

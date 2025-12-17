@@ -4,18 +4,21 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
 	"text/template"
 	"time"
 
+	"github.com/thingsboard-rxprobe/internal/alerter"
 	"github.com/thingsboard-rxprobe/internal/model"
 	"github.com/thingsboard-rxprobe/internal/prober"
 	"github.com/thingsboard-rxprobe/internal/repository"
 	"github.com/thingsboard-rxprobe/internal/scheduler"
 	"github.com/thingsboard-rxprobe/pkg/logger"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // AlertService 告警服务
@@ -24,6 +27,7 @@ type AlertService struct {
 	targetRepo   *repository.TargetRepository
 	resultRepo   *repository.ResultRepository
 	notifierRepo *repository.NotifierRepository
+	alerter      alerter.Alerter
 	scheduler    *scheduler.Scheduler
 	silenceMap   sync.Map // map[uint64]time.Time 静默记录
 	stopChan     chan struct{}
@@ -35,6 +39,7 @@ func NewAlertService(
 	targetRepo *repository.TargetRepository,
 	resultRepo *repository.ResultRepository,
 	notifierRepo *repository.NotifierRepository,
+	alerter alerter.Alerter,
 	sch *scheduler.Scheduler,
 ) *AlertService {
 	return &AlertService{
@@ -42,6 +47,7 @@ func NewAlertService(
 		targetRepo:   targetRepo,
 		resultRepo:   resultRepo,
 		notifierRepo: notifierRepo,
+		alerter:      alerter,
 		scheduler:    sch,
 		stopChan:     make(chan struct{}),
 	}
@@ -94,12 +100,12 @@ func (s *AlertService) processResults(ctx context.Context) {
 
 // handleAlert 处理告警
 func (s *AlertService) handleAlert(ctx context.Context, event *scheduler.AlertEvent) {
-	// 检查是否在静默期
-	if s.isSilenced(event.Target.ID) {
-		logger.Debug("告警处于静默期",
-			zap.Uint64("target_id", event.Target.ID),
-		)
-		return
+	// 静默期只影响“发送通知”，不影响告警记录/目标状态更新
+	silenced := s.isSilenced(event.Target.ID)
+
+	firedAt := event.Result.CheckedAt
+	if firedAt.IsZero() {
+		firedAt = time.Now()
 	}
 
 	var configMap map[string]any
@@ -108,19 +114,38 @@ func (s *AlertService) handleAlert(ctx context.Context, event *scheduler.AlertEv
 	}
 
 	if event.Status == model.AlertStatusFiring {
-		// 创建告警记录
-		record := &model.AlertRecord{
-			TargetID:   event.Target.ID,
-			TargetName: event.Target.Name,
-			TargetType: event.Target.Type,
-			Status:     model.AlertStatusFiring,
-			Message:    event.Result.Message,
-			LatencyMs:  event.Result.Latency.Milliseconds(),
-			FiredAt:    time.Now(),
+		// “每次失败都告警”会频繁触发 firing 事件：这里做记录层去重
+		// - 如果已有未恢复告警记录：更新其 message/latency（保持 fired_at 作为故障开始时间）
+		// - 如果没有：创建新的未恢复告警记录
+		record, err := s.alertRepo.GetLastFiringRecord(ctx, event.Target.ID)
+		if err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				logger.Error("查询未恢复告警记录失败", zap.Error(err))
+			}
+			record = nil
 		}
 
-		if err := s.alertRepo.CreateRecord(ctx, record); err != nil {
-			logger.Error("创建告警记录失败", zap.Error(err))
+		isNewRecord := false
+		if record == nil {
+			isNewRecord = true
+			record = &model.AlertRecord{
+				TargetID:   event.Target.ID,
+				TargetName: event.Target.Name,
+				TargetType: event.Target.Type,
+				Status:     model.AlertStatusFiring,
+				Message:    event.Result.Message,
+				LatencyMs:  event.Result.Latency.Milliseconds(),
+				FiredAt:    firedAt,
+			}
+			if err := s.alertRepo.CreateRecord(ctx, record); err != nil {
+				logger.Error("创建告警记录失败", zap.Error(err))
+			}
+		} else {
+			// 更新为最新失败原因（但不改变 FiredAt）
+			record.TargetName = event.Target.Name
+			record.TargetType = event.Target.Type
+			record.Message = event.Result.Message
+			record.LatencyMs = event.Result.Latency.Milliseconds()
 		}
 
 		// 发送告警通知
@@ -132,19 +157,40 @@ func (s *AlertService) handleAlert(ctx context.Context, event *scheduler.AlertEv
 			Status:     model.AlertStatusFiring,
 			Message:    event.Result.Message,
 			Latency:    event.Result.Latency,
-			FiredAt:    time.Now(),
+			// 通知里的时间使用本次失败发生时间，避免每次重复告警都显示“首次失败时间”
+			FiredAt: firedAt,
 		}
 
-		// 从数据库获取启用的通知渠道并发送
-		if err := s.sendToAllChannels(ctx, alert); err != nil {
-			logger.Error("发送告警失败", zap.Error(err))
-		} else {
-			record.Notified = true
-			s.alertRepo.UpdateRecord(ctx, record)
-			logger.Info("告警发送成功",
+		if silenced {
+			logger.Debug("告警处于静默期，跳过发送通知",
 				zap.Uint64("target_id", event.Target.ID),
-				zap.String("target_name", event.Target.Name),
 			)
+		} else {
+			// 从数据库获取启用的通知渠道并发送
+			if err := s.sendToAllChannels(ctx, alert); err != nil {
+				logger.Error("发送告警失败", zap.Error(err))
+			} else {
+				record.Notified = true
+				logger.Info("告警发送成功",
+					zap.Uint64("target_id", event.Target.ID),
+					zap.String("target_name", event.Target.Name),
+				)
+			}
+		}
+
+		// 持久化记录更新（避免“每次失败都告警”模式下无限新增 firing 记录）
+		if isNewRecord {
+			// 新记录已 Create；仅在通知成功且 Notified 变更时需要 Update
+			if record.Notified {
+				if err := s.alertRepo.UpdateRecord(ctx, record); err != nil {
+					logger.Error("更新告警记录失败", zap.Error(err))
+				}
+			}
+		} else {
+			// 老记录 message/latency 可能变化；Notified 也可能变化
+			if err := s.alertRepo.UpdateRecord(ctx, record); err != nil {
+				logger.Error("更新告警记录失败", zap.Error(err))
+			}
 		}
 
 		// 更新目标状态
@@ -153,7 +199,11 @@ func (s *AlertService) handleAlert(ctx context.Context, event *scheduler.AlertEv
 	} else if event.Status == model.AlertStatusResolved {
 		// 查找并恢复告警记录（仅更新数据库，不发送通知）
 		record, err := s.alertRepo.GetLastFiringRecord(ctx, event.Target.ID)
-		if err == nil && record != nil {
+		if err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				logger.Error("查询未恢复告警记录失败", zap.Error(err))
+			}
+		} else if record != nil {
 			s.alertRepo.ResolveRecord(ctx, record.ID)
 			logger.Info("告警已恢复（不发送通知）",
 				zap.Uint64("target_id", event.Target.ID),
@@ -242,11 +292,28 @@ func (s *AlertService) GetRecordByID(ctx context.Context, id uint64) (*model.Ale
 
 // sendToAllChannels 发送告警到目标配置的通知渠道
 func (s *AlertService) sendToAllChannels(ctx context.Context, alert *model.Alert) error {
-	var successCount int
+	var alerterErr error
+	var hasAnyChannel bool // 标记是否有任何可用的通知渠道
+	var successCount int   // 成功发送的数量
+
+	// 首先尝试使用配置文件中的告警器（向后兼容）
+	if s.alerter != nil {
+		hasAnyChannel = true
+		if err := s.alerter.Send(ctx, alert); err != nil {
+			logger.Error("配置文件告警器发送失败", zap.Error(err))
+			alerterErr = err
+		} else {
+			successCount++
+			logger.Debug("配置文件告警器发送成功")
+		}
+	}
 
 	// 从数据库获取启用的通知渠道
 	if s.notifierRepo == nil {
-		logger.Warn("通知渠道仓库未初始化")
+		// 如果没有通知渠道仓库，只依赖 alerter 的结果
+		if hasAnyChannel {
+			return alerterErr
+		}
 		return nil
 	}
 
@@ -266,9 +333,14 @@ func (s *AlertService) sendToAllChannels(ctx context.Context, alert *model.Alert
 
 	// 如果目标没有配置通知渠道
 	if len(notifyChannelIDs) == 0 {
-		logger.Debug("目标未配置通知渠道，跳过告警发送",
+		logger.Debug("目标未配置通知渠道",
 			zap.Uint64("target_id", alert.TargetID),
 		)
+		// 如果之前配置文件告警器发送失败，返回该错误
+		if hasAnyChannel {
+			return alerterErr
+		}
+		// 如果没有任何通知方式，返回 nil（避免误报）
 		return nil
 	}
 
@@ -290,13 +362,19 @@ func (s *AlertService) sendToAllChannels(ctx context.Context, alert *model.Alert
 	}
 
 	if len(targetChannels) == 0 {
-		logger.Warn("未找到可用的通知渠道",
+		logger.Debug("未找到可用的通知渠道",
 			zap.Uint64("target_id", alert.TargetID),
 			zap.Any("configured_channels", notifyChannelIDs),
 		)
+		// 如果配置了通知渠道但都不可用，且 alerter 也失败了
+		if alerterErr != nil {
+			return alerterErr
+		}
+		// 如果配置了通知渠道但都不可用，返回错误
 		return fmt.Errorf("目标配置了 %d 个通知渠道，但都不可用", len(notifyChannelIDs))
 	}
 
+	hasAnyChannel = true
 	var lastErr error
 	for _, channel := range targetChannels {
 		if err := s.sendToChannel(ctx, channel, alert); err != nil {
@@ -316,9 +394,8 @@ func (s *AlertService) sendToAllChannels(ctx context.Context, alert *model.Alert
 
 	// 如果至少有一个渠道发送成功，返回成功
 	if successCount > 0 {
-		logger.Info("告警通知发送成功",
+		logger.Info("至少有一个通知渠道发送成功",
 			zap.Int("success_count", successCount),
-			zap.Int("total_channels", len(targetChannels)),
 			zap.Uint64("target_id", alert.TargetID),
 		)
 		return nil
@@ -327,6 +404,9 @@ func (s *AlertService) sendToAllChannels(ctx context.Context, alert *model.Alert
 	// 所有渠道都失败了，返回最后一个错误
 	if lastErr != nil {
 		return lastErr
+	}
+	if alerterErr != nil {
+		return alerterErr
 	}
 	return fmt.Errorf("所有通知渠道发送失败")
 }

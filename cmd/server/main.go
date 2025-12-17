@@ -42,6 +42,10 @@ func main() {
 	defer logger.Sync()
 
 	logger.Info("正在启动 生产环境通用监控工具...")
+	logger.Info("已加载配置",
+		zap.String("config_path", configPath),
+		zap.String("alert_policy", "每次失败都发送告警（固定策略）"),
+	)
 
 	// 初始化数据库
 	if err := database.Init(database.Config{
@@ -71,7 +75,7 @@ func main() {
 	proberFactory := prober.NewFactory()
 
 	// 创建调度器（传入 alertRepo 用于检查未恢复的告警）
-	sch := scheduler.NewScheduler(proberFactory, cfg.Scheduler.AlertThreshold, alertRepo)
+	sch := scheduler.NewScheduler(proberFactory, alertRepo)
 
 	// 解析JWT过期时间
 	jwtExpiry := 7 * 24 * time.Hour // 默认7天
@@ -83,7 +87,8 @@ func main() {
 
 	// 创建服务
 	probeService := service.NewProbeService(targetRepo, resultRepo, alertRepo, proberFactory, sch)
-	alertService := service.NewAlertService(alertRepo, targetRepo, resultRepo, notifierRepo, sch)
+	// alerter 参数用于兼容旧的配置文件告警器；当前默认不启用（nil）
+	alertService := service.NewAlertService(alertRepo, targetRepo, resultRepo, notifierRepo, nil, sch)
 	cleanupService := service.NewCleanupService(resultRepo, alertRepo, cfg.Scheduler.ResultRetentionDays)
 	authService := service.NewAuthService(userRepo, cfg.Auth.JWTSecret, jwtExpiry)
 

@@ -60,9 +60,17 @@ func (h *AlertHandler) GetRecord(c *gin.Context) {
 
 // SilenceAlert 静默告警
 func (h *AlertHandler) SilenceAlert(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	recordID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		Error(c, http.StatusBadRequest, "无效的 ID")
+		return
+	}
+
+	// 路由是 /alerts/:id/silence，这里的 id 是告警记录 ID
+	// 静默需要作用在目标维度上，因此需要先反查 target_id
+	record, err := h.alertService.GetRecordByID(c.Request.Context(), recordID)
+	if err != nil || record == nil {
+		Error(c, http.StatusNotFound, "记录不存在")
 		return
 	}
 
@@ -79,7 +87,7 @@ func (h *AlertHandler) SilenceAlert(c *gin.Context) {
 	}
 
 	duration := time.Duration(req.DurationMinutes) * time.Minute
-	h.alertService.SilenceAlert(id, duration)
+	h.alertService.SilenceAlert(record.TargetID, duration)
 
 	Success(c, nil)
 }
