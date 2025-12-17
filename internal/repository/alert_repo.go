@@ -99,12 +99,16 @@ func (r *AlertRepository) GetLastFiringRecord(ctx context.Context, targetID uint
 
 // ResolveRecord 恢复告警记录
 func (r *AlertRepository) ResolveRecord(ctx context.Context, id uint64) error {
-	now := time.Now()
+	return r.ResolveRecordAt(ctx, id, time.Now())
+}
+
+// ResolveRecordAt 恢复告警记录，并设置恢复时间
+func (r *AlertRepository) ResolveRecordAt(ctx context.Context, id uint64, resolvedAt time.Time) error {
 	return r.db.WithContext(ctx).Model(&model.AlertRecord{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
 			"status":      model.AlertStatusResolved,
-			"resolved_at": now,
+			"resolved_at": resolvedAt,
 		}).Error
 }
 

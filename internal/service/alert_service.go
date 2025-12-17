@@ -197,18 +197,49 @@ func (s *AlertService) handleAlert(ctx context.Context, event *scheduler.AlertEv
 		s.targetRepo.UpdateStatus(ctx, event.Target.ID, model.TargetStatusUnhealthy, event.Result.Latency.Milliseconds(), event.Result.Message)
 
 	} else if event.Status == model.AlertStatusResolved {
-		// 查找并恢复告警记录（仅更新数据库，不发送通知）
+		// 查找并恢复告警记录（同时发送恢复通知）
+		resolvedAt := event.Result.CheckedAt
+		if resolvedAt.IsZero() {
+			resolvedAt = time.Now()
+		}
+
 		record, err := s.alertRepo.GetLastFiringRecord(ctx, event.Target.ID)
 		if err != nil {
 			if !errors.Is(err, gorm.ErrRecordNotFound) {
 				logger.Error("查询未恢复告警记录失败", zap.Error(err))
 			}
 		} else if record != nil {
-			s.alertRepo.ResolveRecord(ctx, record.ID)
-			logger.Info("告警已恢复（不发送通知）",
-				zap.Uint64("target_id", event.Target.ID),
-				zap.String("target_name", event.Target.Name),
-			)
+			// 先落库更新状态/恢复时间
+			if err := s.alertRepo.ResolveRecordAt(ctx, record.ID, resolvedAt); err != nil {
+				logger.Error("恢复告警记录失败", zap.Error(err))
+			}
+
+			// 发送恢复通知（时间跨度使用“故障开始时间 record.FiredAt”）
+			alert := &model.Alert{
+				ID:         record.ID,
+				TargetID:   event.Target.ID,
+				TargetName: event.Target.Name,
+				TargetType: event.Target.Type,
+				Status:     model.AlertStatusResolved,
+				Message:    event.Result.Message,
+				FiredAt:    record.FiredAt,
+				ResolvedAt: &resolvedAt,
+			}
+
+			if silenced {
+				logger.Debug("告警处于静默期，跳过发送恢复通知",
+					zap.Uint64("target_id", event.Target.ID),
+				)
+			} else {
+				if err := s.sendToAllChannels(ctx, alert); err != nil {
+					logger.Error("发送恢复通知失败", zap.Error(err))
+				} else {
+					logger.Info("恢复通知发送成功",
+						zap.Uint64("target_id", event.Target.ID),
+						zap.String("target_name", event.Target.Name),
+					)
+				}
+			}
 		}
 
 		// 更新目标状态
