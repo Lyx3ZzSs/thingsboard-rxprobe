@@ -48,7 +48,7 @@ func (p *PingProber) Probe(ctx context.Context, target Target) (*ProbeResult, er
 		}, nil
 	}
 
-	// 固定配置：ping 4 次，每次超时 3 秒
+	// 固定配置：ping 4 次，整个操作总超时 3 秒
 	count := 4
 	timeout := 3 * time.Second
 

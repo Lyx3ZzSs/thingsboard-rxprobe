@@ -90,7 +90,7 @@ const configFields = computed(() => {
     ],
     cpu: [
       { key: 'threshold', label: 'CPU告警阈值 (%)', type: 'number', placeholder: '80', hint: '当 CPU 占用率超过此值时触发告警 (0-100)' },
-      { key: 'sample_duration', label: '采样时长 (秒)', type: 'number', placeholder: '3', hint: 'CPU 使用率采样时长，建议 1-10 秒' }
+      { key: 'sample_duration', label: '采样时长 (秒)', type: 'number', placeholder: '30', hint: 'CPU 使用率采样时长，必须大于等于30秒' }
     ]
   }
   return fields[form.type] || []
@@ -206,6 +206,14 @@ async function handleTest() {
 async function handleSubmit() {
   if (!form.name) return
   
+  // 验证间隔时间必须大于等于30秒（CPU类型除外，因为它的间隔由采样时长决定）
+  if (form.type !== 'cpu') {
+    if (form.interval_seconds < 30) {
+      alert('探测间隔时间必须大于等于30秒')
+      return
+    }
+  }
+  
   loading.value = true
   try {
     // 根据类型设置合理的间隔和超时
@@ -213,18 +221,26 @@ async function handleSubmit() {
     let timeoutSeconds = form.timeout_seconds
     
     if (form.type === 'cpu') {
-      // CPU 监控的检测间隔等于采样时长
-      const sampleDuration = parseInt(form.config.sample_duration) || 3
+      // CPU 监控的检测间隔等于采样时长，必须大于等于30秒
+      const sampleDuration = parseInt(form.config.sample_duration) || 30
+      if (sampleDuration < 30) {
+        alert('CPU 采样时长必须大于等于30秒')
+        loading.value = false
+        return
+      }
       intervalSeconds = sampleDuration
-      timeoutSeconds = sampleDuration + 5  // 超时设置宽松一些
+      timeoutSeconds = intervalSeconds + 5  // 超时设置宽松一些
     } else if (form.type === 'kafka') {
       // Kafka 集群连接检查：默认30秒检查一次，超时10秒
-      intervalSeconds = 30
+      intervalSeconds = Math.max(form.interval_seconds, 30)
       timeoutSeconds = 10
     } else if (form.type === 'ping') {
-      // Ping 探测：默认30秒检查一次，超时15秒（4次ping，每次3秒，加上网络延迟）
-      intervalSeconds = 30
-      timeoutSeconds = 15
+      // Ping 探测：默认30秒检查一次，超时时间由 ping 操作内部控制（固定3秒），这里设置15秒作为外部保护
+      intervalSeconds = Math.max(form.interval_seconds, 30)
+      timeoutSeconds = 15  // 外部保护超时，实际 ping 操作内部超时为 3 秒
+    } else {
+      // 其他类型确保间隔时间至少30秒
+      intervalSeconds = Math.max(form.interval_seconds, 30)
     }
     
     const payload = {
@@ -403,8 +419,9 @@ onMounted(() => {
       <!-- 探测参数 (CPU监控不显示) -->
       <div v-if="shouldShowProbeParams" class="grid grid-cols-2 gap-4">
         <div>
-          <label class="text-sm font-medium mb-2 block">探测间隔 (秒)</label>
-          <Input v-model.number="form.interval_seconds" type="number" min="5" />
+          <label class="text-sm font-medium mb-2 block">探测间隔 (秒) <span class="text-muted-foreground text-xs">(≥30秒)</span></label>
+          <Input v-model.number="form.interval_seconds" type="number" min="30" />
+          <p class="text-xs text-muted-foreground mt-1">间隔时间必须大于等于30秒</p>
         </div>
         <div v-if="shouldShowTimeout">
           <label class="text-sm font-medium mb-2 block">超时时间 (秒)</label>
@@ -424,7 +441,7 @@ onMounted(() => {
       <div v-if="form.type === 'ping'" class="p-3 rounded-lg bg-primary/10 border border-primary/20">
         <p class="text-sm text-foreground">
           <span class="font-medium">💡 提示：</span>
-          Ping 探测固定发送 4 个数据包，每个数据包超时时间为 3 秒，总超时时间固定为 15 秒，无需手动设置。
+          Ping 探测固定发送 4 个数据包，操作总超时时间为 3 秒，无需手动设置超时时间。
         </p>
       </div>
       

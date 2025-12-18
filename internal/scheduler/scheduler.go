@@ -114,6 +114,11 @@ func (s *Scheduler) AddTask(target *model.ProbeTarget) error {
 		return fmt.Errorf("解析配置失败: %w", err)
 	}
 
+	// 验证间隔时间必须大于等于30秒
+	if target.IntervalSeconds < 30 {
+		return fmt.Errorf("探测间隔时间必须大于等于30秒，当前值: %d秒", target.IntervalSeconds)
+	}
+
 	probeTarget := prober.Target{
 		ID:       fmt.Sprintf("%d", target.ID),
 		Name:     target.Name,

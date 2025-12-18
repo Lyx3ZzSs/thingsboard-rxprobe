@@ -113,7 +113,6 @@ func (r *Router) Setup(mode string) *gin.Engine {
 				notifiers.GET("", notifierHandler.List)
 				notifiers.POST("", notifierHandler.Create)
 				notifiers.GET("/types", notifierHandler.GetTypes)
-				notifiers.GET("/templates", notifierHandler.GetDefaultTemplates)
 				notifiers.POST("/test", notifierHandler.Test)
 				notifiers.GET("/:id", notifierHandler.Get)
 				notifiers.PUT("/:id", notifierHandler.Update)

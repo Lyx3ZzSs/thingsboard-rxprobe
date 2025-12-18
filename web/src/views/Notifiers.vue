@@ -33,8 +33,7 @@ import {
   updateNotifier, 
   deleteNotifier, 
   testNotifier,
-  getNotifierTypes,
-  getDefaultTemplates
+  getNotifierTypes
 } from '@/api/notifier'
 import { formatTime } from '@/lib/utils'
 
@@ -42,7 +41,6 @@ import { formatTime } from '@/lib/utils'
 const loading = ref(false)
 const notifiers = ref([])
 const notifierTypes = ref([])
-const defaultTemplates = ref({ firing: '', resolved: '' })
 
 // 表单状态
 const formVisible = ref(false)
@@ -95,7 +93,6 @@ const formData = reactive({
   name: '',
   type: 'wecom',
   webhook_url: '',
-  message_tpl: '',
   mention_all: true,
   enabled: true,
   description: ''
@@ -111,7 +108,6 @@ function resetForm() {
   formData.name = ''
   formData.type = 'wecom'
   formData.webhook_url = ''
-  formData.message_tpl = ''
   formData.mention_all = true
   formData.enabled = true
   formData.description = ''
@@ -125,16 +121,6 @@ async function loadNotifierTypes() {
     notifierTypes.value = res.data
   } catch (e) {
     console.error('加载通知类型失败:', e)
-  }
-}
-
-// 加载默认模板
-async function loadDefaultTemplates() {
-  try {
-    const res = await getDefaultTemplates()
-    defaultTemplates.value = res.data
-  } catch (e) {
-    console.error('加载默认模板失败:', e)
   }
 }
 
@@ -165,7 +151,6 @@ function openEditForm(notifier) {
   formData.name = notifier.name
   formData.type = notifier.type
   formData.webhook_url = notifier.webhook_url
-  formData.message_tpl = notifier.message_tpl || ''
   formData.mention_all = notifier.mention_all !== undefined ? notifier.mention_all : true
   formData.enabled = notifier.enabled
   formData.description = notifier.description || ''
@@ -177,15 +162,6 @@ function openEditForm(notifier) {
 function closeForm() {
   formVisible.value = false
   resetForm()
-}
-
-// 使用默认模板
-function useDefaultTemplate(type) {
-  if (type === 'firing') {
-    formData.message_tpl = defaultTemplates.value.firing
-  } else {
-    formData.message_tpl = defaultTemplates.value.resolved
-  }
 }
 
 // 提交表单
@@ -225,7 +201,6 @@ async function handleTestNotifier() {
     await testNotifier({
       type: formData.type,
       webhook_url: formData.webhook_url,
-      message_tpl: formData.message_tpl,
       mention_all: formData.mention_all
     })
     testResult.value = { success: true, message: '测试消息发送成功！' }
@@ -274,7 +249,6 @@ function getTypeLabel(type) {
 
 onMounted(() => {
   loadNotifierTypes()
-  loadDefaultTemplates()
   loadNotifiers()
 })
 </script>
@@ -430,38 +404,6 @@ onMounted(() => {
           <p class="text-xs text-muted-foreground">
             企业微信群机器人的 Webhook 地址
           </p>
-        </div>
-
-        <!-- 消息模板 -->
-        <div class="space-y-2">
-          <div class="flex items-center justify-between">
-            <label class="text-sm font-medium">消息模板（可选）</label>
-            <div class="flex gap-2">
-              <Button 
-                type="button" 
-                variant="link" 
-                size="sm" 
-                class="h-auto p-0 text-xs"
-                @click="useDefaultTemplate('firing')"
-              >
-                告警模板
-              </Button>
-              <Button 
-                type="button" 
-                variant="link" 
-                size="sm" 
-                class="h-auto p-0 text-xs"
-                @click="useDefaultTemplate('resolved')"
-              >
-                恢复模板
-              </Button>
-            </div>
-          </div>
-          <textarea 
-            v-model="formData.message_tpl"
-            class="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
-            placeholder="留空使用默认模板。支持变量：{{.TargetName}}, {{.Message}}, {{.FiredAt}}, {{.ResolvedAt}}, {{.Duration}}"
-          />
         </div>
 
         <!-- 描述 -->

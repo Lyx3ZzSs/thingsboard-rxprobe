@@ -43,13 +43,6 @@ export function getNotifierTypes() {
 }
 
 /**
- * 获取默认消息模板
- */
-export function getDefaultTemplates() {
-  return request.get('/notifiers/templates')
-}
-
-/**
  * 测试通知渠道
  */
 export function testNotifier(data) {

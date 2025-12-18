@@ -71,6 +71,11 @@ func (s *ProbeService) CreateTarget(ctx context.Context, req *model.CreateTarget
 		req.IntervalSeconds = 30
 	}
 
+	// 验证间隔时间必须大于等于30秒
+	if req.IntervalSeconds < 30 {
+		return nil, fmt.Errorf("探测间隔时间必须大于等于30秒，当前值: %d秒", req.IntervalSeconds)
+	}
+
 	// 根据 enabled 状态设置初始 status
 	initialStatus := model.TargetStatusUnknown
 	initialMessage := "等待首次探测"
@@ -150,6 +155,10 @@ func (s *ProbeService) UpdateTarget(ctx context.Context, id uint64, req *model.U
 		target.TimeoutSeconds = req.TimeoutSeconds
 	}
 	if req.IntervalSeconds > 0 {
+		// 验证间隔时间必须大于等于30秒
+		if req.IntervalSeconds < 30 {
+			return nil, fmt.Errorf("探测间隔时间必须大于等于30秒，当前值: %d秒", req.IntervalSeconds)
+		}
 		target.IntervalSeconds = req.IntervalSeconds
 	}
 	if req.Enabled != nil {

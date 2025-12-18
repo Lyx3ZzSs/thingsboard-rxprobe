@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"text/template"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -183,7 +182,6 @@ func (h *NotifierHandler) Delete(c *gin.Context) {
 // TestNotifierRequest 测试通知渠道请求
 type TestNotifierRequest struct {
 	WebhookURL string `json:"webhook_url" binding:"required"`
-	MessageTpl string `json:"message_tpl"`
 	Type       string `json:"type" binding:"required"`
 	MentionAll bool   `json:"mention_all"`
 }
@@ -202,25 +200,13 @@ func (h *NotifierHandler) Test(c *gin.Context) {
 		return
 	}
 
-	// 构建测试消息
-	message := "这是一条测试通知\n\n时间：" + time.Now().Format("2006-01-02 15:04:05")
-	if req.MessageTpl != "" {
-		// 使用自定义模板
-		data := map[string]string{
-			"TargetName": "测试目标",
-			"TargetType": "HTTP",
-			"Message":    "这是一条测试消息",
-			"FiredAt":    time.Now().Format("2006-01-02 15:04:05"),
-			"ResolvedAt": time.Now().Format("2006-01-02 15:04:05"),
-			"Duration":   "1分30秒",
-		}
-		rendered, err := renderTemplate(req.MessageTpl, data)
-		if err != nil {
-			Error(c, http.StatusBadRequest, "消息模板格式错误: "+err.Error())
-			return
-		}
-		message = rendered
-	}
+	// 构建测试消息（使用默认格式）
+	message := fmt.Sprintf(`🚨 测试通知
+
+目标：测试目标
+类型：HTTP
+原因：这是一条测试消息
+时间：%s`, time.Now().Format("2006-01-02 15:04:05"))
 
 	// 发送测试消息
 	if err := sendWeComMessage(c.Request.Context(), req.WebhookURL, message, req.MentionAll); err != nil {
@@ -241,28 +227,6 @@ func (h *NotifierHandler) GetTypes(c *gin.Context) {
 		},
 	}
 	Success(c, types)
-}
-
-// GetDefaultTemplates 获取默认消息模板
-func (h *NotifierHandler) GetDefaultTemplates(c *gin.Context) {
-	templates := gin.H{
-		"firing":   model.DefaultFiringMessageTemplate,
-		"resolved": model.DefaultResolvedMessageTemplate,
-	}
-	Success(c, templates)
-}
-
-// renderTemplate 渲染模板
-func renderTemplate(tpl string, data map[string]string) (string, error) {
-	t, err := template.New("message").Parse(tpl)
-	if err != nil {
-		return "", err
-	}
-	var buf bytes.Buffer
-	if err := t.Execute(&buf, data); err != nil {
-		return "", err
-	}
-	return buf.String(), nil
 }
 
 // sendWeComMessage 发送企业微信消息

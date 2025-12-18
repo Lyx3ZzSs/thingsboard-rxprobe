@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
-	"text/template"
 	"time"
 
 	"github.com/thingsboard-rxprobe/internal/alerter"
@@ -508,30 +507,8 @@ func (s *AlertService) sendToWeCom(ctx context.Context, channel *model.NotifyCha
 	return nil
 }
 
-// formatAlertMessage 格式化告警消息
+// formatAlertMessage 格式化告警消息（使用默认模板）
 func (s *AlertService) formatAlertMessage(channel *model.NotifyChannel, alert *model.Alert) string {
-	// 如果有自定义模板，使用自定义模板
-	if channel.MessageTpl != "" {
-		data := map[string]string{
-			"TargetName": alert.TargetName,
-			"TargetType": alert.TargetType,
-			"Message":    alert.Message,
-			"FiredAt":    alert.FiredAt.Format("2006-01-02 15:04:05"),
-		}
-		if alert.ResolvedAt != nil {
-			data["ResolvedAt"] = alert.ResolvedAt.Format("2006-01-02 15:04:05")
-			data["Duration"] = formatDuration(alert.ResolvedAt.Sub(alert.FiredAt))
-		}
-
-		t, err := template.New("message").Parse(channel.MessageTpl)
-		if err == nil {
-			var buf bytes.Buffer
-			if err := t.Execute(&buf, data); err == nil {
-				return buf.String()
-			}
-		}
-	}
-
 	// 使用默认模板
 	if alert.Status == model.AlertStatusFiring {
 		return fmt.Sprintf(`🚨 告警通知 [%s]
